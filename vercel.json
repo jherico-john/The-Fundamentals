@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "regions": ["sin1"],
+  "functions": {
+    "src/app/api/verify-receipt/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  }
+}
