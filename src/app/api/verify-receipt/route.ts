@@ -1,94 +1,83 @@
-// src/app/api/verify-receipt/route.ts
-// Accepts multipart/form-data with the uploaded GCash receipt image.
-// Runs two-layer verification (QR scan + OCR).
-// On success: returns a signed download token.
-
+// src/app/api/verify-receipt/route.ts — v4
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyGCashReceipt } from '@/lib/receiptVerifier';
-import { issueDownloadToken } from '@/lib/downloadToken';
+import {
+  issueDownloadToken, signPurchaseCookie, PURCHASE_COOKIE, purchaseCookieOpts,
+  verifyCustomerSession, CUST_COOKIE,
+} from '@/lib/tokens';
 
-export const runtime = 'nodejs'; // required for Jimp/Tesseract
+export const runtime = 'nodejs';
 
-// Max upload: 10MB
-const MAX_SIZE_BYTES = 10 * 1024 * 1024;
+// Map product slug → expected price (reads from env)
+function getPriceForProduct(slug: string): number {
+  const map: Record<string, string> = {
+    'fundamentals':   'NEXT_PUBLIC_PRODUCT_FUNDAMENTALS_PRICE',
+    'pre-encounter':  'NEXT_PUBLIC_PRODUCT_PRE_ENCOUNTER_PRICE',
+    'sunyl':          'NEXT_PUBLIC_PRODUCT_SUNYL_PRICE',
+    'encounter':      'NEXT_PUBLIC_PRODUCT_ENCOUNTER_PRICE',
+    'post-encounter': 'NEXT_PUBLIC_PRODUCT_POST_ENCOUNTER_PRICE',
+    'lifegroup':      'NEXT_PUBLIC_PRODUCT_LIFEGROUP_PRICE',
+  };
+  const envKey = map[slug] || 'NEXT_PUBLIC_PRODUCT_FUNDAMENTALS_PRICE';
+  return parseFloat(process.env[envKey] || '497');
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const contentType = req.headers.get('content-type') || '';
-    if (!contentType.includes('multipart/form-data')) {
+    if (!req.headers.get('content-type')?.includes('multipart/form-data'))
       return NextResponse.json({ error: 'Expected multipart/form-data' }, { status: 400 });
-    }
 
-    const formData = await req.formData();
-    const file = formData.get('receipt') as File | null;
+    const form        = await req.formData();
+    const file        = form.get('receipt') as File | null;
+    const affiliateCode = (form.get('affiliateCode') as string) || null;
+    const productSlug = (form.get('productSlug') as string) || 'fundamentals';
+    const productName = (form.get('productName') as string) || 'The Fundamentals';
 
-    if (!file) {
-      return NextResponse.json({ error: 'No receipt file uploaded' }, { status: 400 });
-    }
+    if (!file) return NextResponse.json({ error: 'No receipt file uploaded.' }, { status: 400 });
+    if (file.size > 10 * 1024 * 1024) return NextResponse.json({ error: 'File too large (max 10MB).' }, { status: 400 });
+    if (!file.type.startsWith('image/') && !file.name.match(/\.(jpg|jpeg|png|webp|jfif)$/i))
+      return NextResponse.json({ error: 'Please upload a JPG, PNG, or WEBP image.' }, { status: 400 });
 
-    if (file.size > MAX_SIZE_BYTES) {
-      return NextResponse.json({ error: 'File too large. Maximum size is 10MB.' }, { status: 400 });
-    }
+    const buf = Buffer.from(await file.arrayBuffer());
 
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic'];
-    if (!allowedTypes.includes(file.type) && !file.name.match(/\.(jpg|jpeg|png|webp|jfif)$/i)) {
-      return NextResponse.json({
-        error: 'Invalid file type. Please upload a JPG, PNG, or WEBP screenshot of your GCash receipt.',
-      }, { status: 400 });
-    }
+    // Get logged-in customer if any
+    let customerId: string | null = null;
+    const custCookie = req.cookies.get(CUST_COOKIE)?.value;
+    if (custCookie) { const s = verifyCustomerSession(custCookie); if (s) customerId = s.id; }
 
-    // Convert File to Buffer
-    const arrayBuffer = await file.arrayBuffer();
-    const imageBuffer = Buffer.from(arrayBuffer);
+    const expectedAmount = getPriceForProduct(productSlug);
 
-    // Verification config from env
-    const expectedAmount = parseFloat(process.env.NEXT_PUBLIC_PRODUCT_PRICE || '497');
-    const testMode = process.env.TEST_MODE === 'true';
-    const priceTolerance = parseFloat(process.env.PRICE_TOLERANCE || '5');
-
-    const result = await verifyGCashReceipt(imageBuffer, {
+    const result = await verifyGCashReceipt(buf, {
       expectedAmount,
-      testMode,
-      priceTolerance,
-      maxAgeDays: 3,
+      testMode: process.env.TEST_MODE === 'true',
+      priceTolerance: parseFloat(process.env.PRICE_TOLERANCE || '5'),
+      affiliateCode,
+      customerId,
+      productName,
     });
 
     if (!result.valid) {
-      return NextResponse.json({
-        success: false,
-        error: result.reason,
-        warnings: result.warnings,
-      }, { status: 422 });
+      return NextResponse.json({ success: false, error: result.reason, warnings: result.warnings }, { status: 422 });
     }
 
-    // Issue signed download token
-    const token = issueDownloadToken(
-      result.data!.referenceNumber,
-      result.data!.amount
-    );
-
-    console.log('[verify-receipt] ✅ Receipt verified:', {
-      refNo: result.data?.referenceNumber,
-      amount: result.data?.amount,
-      date: result.data?.dateStr,
-      testMode,
-    });
-
-    return NextResponse.json({
-      success: true,
-      token,
+    const token = issueDownloadToken(result.data!.referenceNumber, result.data!.amount);
+    const res = NextResponse.json({
+      success: true, token, productSlug,
       data: {
-        referenceNumber: result.data?.referenceNumber,
-        amount: result.data?.amount,
-        dateStr: result.data?.dateStr,
+        referenceNumber: result.data!.referenceNumber,
+        amount: result.data!.amount,
+        dateStr: result.data!.dateStr,
       },
       warnings: result.warnings,
-      testMode,
+      testMode: process.env.TEST_MODE === 'true',
     });
-  } catch (err: unknown) {
-    console.error('[verify-receipt] Error:', err);
-    return NextResponse.json({
-      error: 'Verification failed due to a server error. Please try again or contact support.',
-    }, { status: 500 });
+
+    // Persistent "already purchased" cookie (1 year) — keyed per product
+    const cookieName = `${PURCHASE_COOKIE}_${productSlug}`;
+    res.cookies.set(cookieName, signPurchaseCookie(result.data!.referenceNumber, result.data!.amount), purchaseCookieOpts);
+    return res;
+  } catch (err) {
+    console.error('[verify-receipt]', err);
+    return NextResponse.json({ error: 'Server error during verification. Please try again.' }, { status: 500 });
   }
 }

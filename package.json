@@ -1,6 +1,6 @@
 {
-  "name": "ministry-checkout-v3",
-  "version": "3.0.0",
+  "name": "ministry-checkout-v4",
+  "version": "4.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -15,10 +15,14 @@
     "lucide-react": "^0.383.0",
     "jimp": "^0.22.12",
     "qrcode-reader": "^1.0.4",
+    "tesseract.js": "^5.1.0",
+    "@supabase/supabase-js": "^2.45.4",
+    "bcryptjs": "^2.4.3",
     "uuid": "^9.0.1",
-    "tesseract.js": "^5.1.0"
+    "recharts": "^2.12.7"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
