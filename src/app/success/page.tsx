@@ -4,7 +4,7 @@ import { CheckCircle2, Download, BookOpen } from 'lucide-react';
 
 export default function SuccessPage() {
   const [cd, setCd] = useState(5);
-  const dlUrl = process.env.NEXT_PUBLIC_DOWNLOAD_PAGE_URL || 'https://jhericojohnbalasa.systeme.io/fundementals-truth';
+  const dlUrl = process.env.NEXT_PUBLIC_DOWNLOAD_PAGE_URL || 'https://jhericojohnbalasa.systeme.io/thankyou-page-fundamentals';
   useEffect(() => {
     const t = setInterval(() => setCd(c => { if (c <= 1) { clearInterval(t); window.location.href = dlUrl; return 0; } return c - 1; }), 1000);
     return () => clearInterval(t);
