@@ -20,6 +20,7 @@ export interface ProductConfig {
   originalPrice: number;
   lessons: number;
   coverImage?: string;
+  affiliateProductLink?: string;
   features: { label: string; sub: string }[];
   testimonials: { name: string; role: string; text: string }[];
   downloadPageUrl: string;
