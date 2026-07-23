@@ -116,9 +116,9 @@ function isGCashQR(p: string): boolean {
 // ── Main verification ─────────────────────────────────────────────────────────
 export async function verifyGCashReceipt(
   buf: Buffer,
-  opts: { expectedAmount: number; testMode: boolean; priceTolerance: number; maxAgeDays?: number; affiliateCode?: string | null; customerId?: string | null; }
+  opts: { expectedAmount: number; testMode: boolean; priceTolerance: number; maxAgeDays?: number; affiliateCode?: string | null; customerId?: string | null; productName?: string;}
 ): Promise<VerifyResult> {
-  const { expectedAmount, testMode, priceTolerance, maxAgeDays = 3, affiliateCode, customerId } = opts;
+  const { expectedAmount, testMode, priceTolerance, maxAgeDays = 3, affiliateCode, customerId,  productName = 'The Fundamentals' } = opts;
   const warnings: string[] = [];
   const imageHash = hashImage(buf);
 
@@ -184,7 +184,7 @@ export async function verifyGCashReceipt(
   if (refNumber) {
     try {
       await markReceiptUsed(refNumber, imageHash, amount ?? 0, dateStr ?? '');
-      await recordPurchase(refNumber, amount ?? 0, 'The Fundamentals', affiliateCode, customerId);
+      await recordPurchase(refNumber, amount ?? 0, productName, affiliateCode, customerId);
     } catch (err) { console.warn('[verifier] Supabase write error (non-fatal):', err); }
   }
 
