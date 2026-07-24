@@ -1,14 +1,15 @@
 /** @type {import('next').NextConfig} */
 // ─────────────────────────────────────────────────────────────────────────────
-// BUG FIX: "Cannot find module .next/worker-script/node/index.js"
+// FIX 1 (next.config.js):
 //
-// Root cause: `serverExternalPackages` is a Next.js 15+ TOP-LEVEL key.
-// In Next 14.x, using it silently no-ops → webpack bundles tesseract.js
-// INTO .next/, but tesseract spawns a worker_thread that resolves its script
-// relative to __dirname inside .next/ → the file doesn't exist there → crash.
+// In Next.js 14.x, the correct key is `experimental.serverComponentsExternalPackages`.
+// `serverExternalPackages` (no `experimental`) is a Next 15+ top-level key.
+// Using the wrong key silently no-ops → webpack BUNDLES these packages into
+// .next/server/chunks/ → tesseract's worker_thread can't find its script there.
 //
-// Fix: Use the CORRECT Next 14 key: experimental.serverComponentsExternalPackages
-// AND add explicit webpack externals so webpack never touches these modules.
+// FIX 2 (webpack externals):
+// Belt-and-suspenders: explicitly mark jimp, tesseract.js, qrcode-reader, and
+// the language data package as external so webpack never touches them.
 // ─────────────────────────────────────────────────────────────────────────────
 const nextConfig = {
   experimental: {
@@ -16,13 +17,13 @@ const nextConfig = {
       'jimp',
       'qrcode-reader',
       'tesseract.js',
+      '@tesseract.js-data/eng',
       '@jimp/core',
       '@jimp/types',
     ],
   },
   webpack: (config, { isServer }) => {
     if (isServer) {
-      // Prevent webpack from bundling these — Node will require() from node_modules.
       const existing = Array.isArray(config.externals)
         ? config.externals
         : config.externals ? [config.externals] : [];
@@ -31,6 +32,7 @@ const nextConfig = {
         'tesseract.js',
         'jimp',
         'qrcode-reader',
+        '@tesseract.js-data/eng',
         'bcryptjs',
       ];
     }

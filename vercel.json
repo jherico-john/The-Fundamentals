@@ -4,7 +4,7 @@
   "regions": ["sin1"],
   "functions": {
     "src/app/api/verify-receipt/route.ts": {
-      "maxDuration": 60,
+      "maxDuration": 30,
       "memory": 1024
     }
   }

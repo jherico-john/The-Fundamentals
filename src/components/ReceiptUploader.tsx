@@ -75,7 +75,8 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
     startProg();
     const form = new FormData();
     form.append('receipt', file);
-    form.append('product', productSlug);
+    form.append('productSlug', productSlug);
+    form.append('productName', productName);
     const ac = getAffCode(); if (ac) form.append('affiliateCode', ac);
     try {
       const res  = await fetch('/api/verify-receipt', { method: 'POST', body: form });
