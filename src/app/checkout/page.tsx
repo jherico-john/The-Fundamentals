@@ -4,9 +4,9 @@ import { CheckCircle2, Zap, Users, Star, Lock, BookOpen, Play, Shield } from 'lu
 import NavBar from '@/components/NavBar';
 import ReceiptUploader from '@/components/ReceiptUploader';
 import PaymentTutorial from '@/components/PaymentTutorial';
-import AffiliateSidebar from '@/components/AffiliateSidebar';
+// - [Not available] import AffiliateSidebar from '@/components/AffiliateSidebar';
 import SupportSection from '@/components/SupportSection';
-import AffiliateNotice from '@/components/AffiliateNotice';
+// - [Not available] import AffiliateNotice from '@/components/AffiliateNotice';
 
 const FEATURES = [
   { icon:<Play size={18}/>, label:'📄 Introduction Guide', sub:'A complete facilitator guide explaining how to use the curriculum effectively in your church, youth ministry, or small group.' },
@@ -149,11 +149,13 @@ export default function CheckoutPage() {
           </div>
         </section>
 
-        {/* Affiliate sidebar — shows ALL OTHER products except Fundamentals */}
+        {/* Affiliate sidebar — shows ALL OTHER products except Fundamentals 
         <AffiliateSidebar
           currentProductSlug="fundamentals"
           currentProductName="The Fundamentals"
         />
+
+        */}
 
         <SupportSection />
 
@@ -166,7 +168,7 @@ export default function CheckoutPage() {
             </a>
           </p>
         </footer>
-        <AffiliateNotice />
+        {/* - [Not available] <AffiliateNotice />*/}
       </div>
     </main>
   );
