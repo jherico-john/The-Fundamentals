@@ -7,7 +7,7 @@ import { CheckCircle2, Zap, Star, Lock, BookOpen, Play, Shield } from 'lucide-re
 import NavBar from '@/components/NavBar';
 import ReceiptUploader from '@/components/ReceiptUploader';
 import PaymentTutorial from '@/components/PaymentTutorial';
-import AffiliateSidebar from '@/components/AffiliateSidebar';
+// - [Not available] import AffiliateSidebar from '@/components/AffiliateSidebar';
 import SupportSection from '@/components/SupportSection';
 
 export interface ProductConfig {
@@ -162,11 +162,12 @@ export default function ProductPageTemplate({ config }: { config: ProductConfig 
 
         <PaymentTutorial />
 
-        {/* Affiliate sidebar — shows ALL products EXCEPT this one */}
+        {/* Affiliate sidebar — shows ALL products EXCEPT this one 
         <AffiliateSidebar
           currentProductSlug={config.slug}
           currentProductName={config.name}
         />
+        */}
 
         <SupportSection />
 
