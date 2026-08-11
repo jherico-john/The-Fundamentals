@@ -77,7 +77,7 @@ export default function SupportSection() {
         </div>
 
         <div>
-          <h3 className="font-bold text-white flex items-center gap-2 mb-4"><Mail size={16} className="text-[var(--green)]"/> Contact Support</h3>
+          <h3 className="font-bold text-white flex items-center gap-2 mb-4"><Mail size={16} className="text-[var(--green)]"/>Contact Support</h3>
           {sent ? (
             <div className="glass-card p-8 flex flex-col items-center text-center">
               <CheckCircle2 size={40} className="text-[var(--green)] mb-3"/>
