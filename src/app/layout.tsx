@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import './globals.css';
 import AffiliateTracker from '@/components/AffiliateTracker';
+import MetaPixel from '@/components/MetaPixel';
 
 export const metadata: Metadata = {
   title: 'Ministry Pack — The Fundamentals',
@@ -18,6 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <Suspense fallback={null}><AffiliateTracker /></Suspense>
+        <MetaPixel />
         {children}
       </body>
     </html>
