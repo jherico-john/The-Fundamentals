@@ -32,11 +32,16 @@ const DL_PAGE = process.env.NEXT_PUBLIC_DOWNLOAD_PAGE_URL_FUNDAMENTALS
 export default function CheckoutPage() {
   const pixel = useMetaPixel();
 
+  // FIX: Read price inside the component at runtime, not at module level.
+  // Module-level parseInt(process.env...) can yield NaN if the env var is
+  // missing at build time — Meta silently drops events with NaN values.
+  const leadPrice = parseInt(process.env.NEXT_PUBLIC_PRODUCT_FUNDAMENTALS_PRICE || '497') || 497;
+  const leadCurrency = process.env.NEXT_PUBLIC_CURRENCY || 'PHP';
+
   // Fire Lead when this checkout page is displayed.
-  // Lead = customer is viewing a specific product they intend to buy.
-  // This runs once on mount, client-side, after fbq is loaded.
+  // useEffect runs after fbq is ready (awaited inside safeFbq).
   useEffect(() => {
-    pixel.trackLead({ name: 'The Fundamentals', price: PRICE, currency: CUR });
+    pixel.trackLead({ name: 'The Fundamentals', price: leadPrice, currency: leadCurrency });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -81,7 +86,7 @@ export default function CheckoutPage() {
             <div className="glass-card p-6 sticky top-20 glow-pulse" style={{borderColor:'rgba(0,255,135,0.3)'}}>
               <div className="w-full h-32 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden"
                 style={{background:'linear-gradient(135deg,#0D3B20,#051A0D)'}}>
-                {/*<BookOpen size={36} className="text-[var(--green)] float-anim"/>*/}
+                 {/*<BookOpen size={36} className="text-[var(--green)] float-anim"/>*/}
                  <img src="/banner/banner_fundamentals.png" alt="The Fundamentals" className="w-full h-full object-contain float-anim z-10"/>
                 <div className="absolute -top-2 -right-2 w-16 h-24 rounded-lg bg-[var(--surface)] border border-[var(--border)] rotate-6 opacity-40"/>
                 <div className="absolute -top-1 right-2 w-16 h-24 rounded-lg bg-[var(--surface)] border border-[var(--border)] rotate-3 opacity-60"/>
@@ -179,7 +184,6 @@ export default function CheckoutPage() {
             </a>
           </p>
         </footer>
-        {/* - [Not available] <AffiliateNotice />*/}
       </div>
     </main>
   );
