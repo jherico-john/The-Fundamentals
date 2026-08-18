@@ -36,7 +36,10 @@ export default function ProductPageTemplate({ config }: { config: ProductConfig 
   // Fire Lead when this product's checkout page is displayed.
   // config.name and config.price are dynamic — correct per product automatically.
   useEffect(() => {
-    pixel.trackLead({ name: config.name, price: config.price, currency: CUR });
+    // Guard: ensure price is a valid number before firing (Meta drops NaN events)
+    const safePrice = Number.isFinite(config.price) ? config.price : 0;
+    const safeCurrency = CUR || 'PHP';
+    pixel.trackLead({ name: config.name, price: safePrice, currency: safeCurrency });
   }, [config.slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
