@@ -109,9 +109,11 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
       // the file download has been triggered. This is the exact moment Meta
       // considers a "Purchase": payment confirmed, product delivered.
       // transactionId = GCash reference number (used by Meta for deduplication).
+      // safePrice guards against NaN — Meta silently drops events with NaN value.
+      const safePrice = Number.isFinite(price) && price > 0 ? price : 0;
       pixel.trackPurchase({
         name: productName,
-        price,
+        price: safePrice,
         currency: 'PHP',
         transactionId: data.referenceNumber || undefined,
       });
