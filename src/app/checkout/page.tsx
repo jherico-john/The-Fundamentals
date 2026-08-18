@@ -1,5 +1,6 @@
 'use client';
 // /checkout — The Fundamentals product page (slug: 'fundamentals')
+import { useEffect } from 'react';
 import { CheckCircle2, Zap, Users, Star, Lock, BookOpen, Play, Shield } from 'lucide-react';
 import NavBar from '@/components/NavBar';
 import ReceiptUploader from '@/components/ReceiptUploader';
@@ -7,6 +8,7 @@ import PaymentTutorial from '@/components/PaymentTutorial';
 // - [Not available] import AffiliateSidebar from '@/components/AffiliateSidebar';
 import SupportSection from '@/components/SupportSection';
 // - [Not available] import AffiliateNotice from '@/components/AffiliateNotice';
+import { useMetaPixel } from '@/lib/useMetaPixel';
 
 const FEATURES = [
   { icon:<Play size={18}/>, label:'📄 Introduction Guide', sub:'A complete facilitator guide explaining how to use the curriculum effectively in your church, youth ministry, or small group.' },
@@ -22,12 +24,21 @@ const TESTIMONIALS = [
   { name:'Bro. Joel M.', role:'Cell Group Facilitator', text:"Worth every peso. I've tried making slides myself — this is on another level.", stars:5 },
 ];
 
-const PRICE = parseInt(process.env.NEXT_PUBLIC_PRODUCT_FUNDAMENTALS_PRICE || '597');
+const PRICE = parseInt(process.env.NEXT_PUBLIC_PRODUCT_FUNDAMENTALS_PRICE || '497');
 const CUR   = process.env.NEXT_PUBLIC_CURRENCY || 'PHP';
 const DL_PAGE = process.env.NEXT_PUBLIC_DOWNLOAD_PAGE_URL_FUNDAMENTALS
-  || 'https://jhericojohnbalasa.systeme.io/thankyou-page-fundamentals';
+  || 'https://jhericojohnbalasa.systeme.io/fundementals-truth';
 
 export default function CheckoutPage() {
+  const pixel = useMetaPixel();
+
+  // Fire Lead when this checkout page is displayed.
+  // Lead = customer is viewing a specific product they intend to buy.
+  // This runs once on mount, client-side, after fbq is loaded.
+  useEffect(() => {
+    pixel.trackLead({ name: 'The Fundamentals', price: PRICE, currency: CUR });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <main className="min-h-screen bg-radial-glow">
       <NavBar product="The Fundamentals" />
@@ -71,7 +82,7 @@ export default function CheckoutPage() {
               <div className="w-full h-32 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden"
                 style={{background:'linear-gradient(135deg,#0D3B20,#051A0D)'}}>
                 {/*<BookOpen size={36} className="text-[var(--green)] float-anim"/>*/}
-                <img src="/banner/banner_fundamentals.png" alt="The Fundamentals" className="w-full h-full object-contain float-anim z-10"/>
+                 <img src="/banner/banner_fundamentals.png" alt="The Fundamentals" className="w-full h-full object-contain float-anim z-10"/>
                 <div className="absolute -top-2 -right-2 w-16 h-24 rounded-lg bg-[var(--surface)] border border-[var(--border)] rotate-6 opacity-40"/>
                 <div className="absolute -top-1 right-2 w-16 h-24 rounded-lg bg-[var(--surface)] border border-[var(--border)] rotate-3 opacity-60"/>
               </div>
@@ -81,8 +92,8 @@ export default function CheckoutPage() {
               <p className="text-xs text-gray-400 mb-4">16 Ready-to-Teach PPT Sessions · Instant Digital Download</p>
               <div className="flex items-baseline gap-2 mb-4">
                 <span className="text-3xl font-extrabold text-[var(--green)]">{CUR} {PRICE.toLocaleString()}</span>
-                <span className="text-gray-500 line-through text-base">{CUR} 4100</span>
-                <span className="bg-[var(--green-deeper)] text-[var(--green)] text-xs font-bold px-2 py-0.5 rounded-full">85.44% OFF</span>
+                <span className="text-gray-500 line-through text-base">{CUR} 997</span>
+                <span className="bg-[var(--green-deeper)] text-[var(--green)] text-xs font-bold px-2 py-0.5 rounded-full">50% OFF</span>
               </div>
               <div className="space-y-1.5 mb-5">
                 {[
@@ -160,7 +171,7 @@ export default function CheckoutPage() {
         <SupportSection />
 
         <footer className="text-center text-xs text-gray-600 pb-8 mt-8">
-          <p>© {new Date().getFullYear()} The Jherico Balasa Ministry. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} The Fundamentals Ministry by Jherico Balasa. All rights reserved.</p>
           <p className="mt-1">
             Need help?{' '}
             <a href="mailto:jhericojohnbalasa@gmail.com" className="text-[var(--green)] hover:underline">
