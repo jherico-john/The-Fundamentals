@@ -1,4 +1,5 @@
 'use client';
+import { useMetaPixel } from '@/lib/useMetaPixel';
 // ReceiptUploader — v4.1
 // Changes: added QR Download button, cleaner GCash panel for mobile users.
 
@@ -27,6 +28,7 @@ const CUR        = process.env.NEXT_PUBLIC_CURRENCY      || 'PHP';
 const EMAIL      = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'jhericojohnbalasa@gmail.com';
 
 export default function ReceiptUploader({ productSlug, productName, price, downloadPage }: Props) {
+  const pixel = useMetaPixel();
   const [stage, setStage]         = useState<Stage>('checking');
   const [drag, setDrag]           = useState(false);
   const [preview, setPreview]     = useState<string | null>(null);
@@ -101,6 +103,20 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
         a.href = data.fileUrl; a.download = `${productName.replace(/\s+/g,'-')}.zip`; a.target = '_blank';
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
       }
+
+      // ── Meta Pixel: Purchase ─────────────────────────────────────────────
+      // Fired ONLY here — after the API confirmed the receipt is valid AND
+      // the file download has been triggered. This is the exact moment Meta
+      // considers a "Purchase": payment confirmed, product delivered.
+      // transactionId = GCash reference number (used by Meta for deduplication).
+      pixel.trackPurchase({
+        name: productName,
+        price,
+        currency: 'PHP',
+        transactionId: data.referenceNumber || undefined,
+      });
+      // ────────────────────────────────────────────────────────────────────
+
       if (data.downloadPageUrl) setTimeout(() => { window.location.href = data.downloadPageUrl; }, 3000);
     } catch { setError('Download error. Use the button below to access your files.'); }
   };
