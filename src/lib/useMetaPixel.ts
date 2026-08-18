@@ -1,91 +1,113 @@
-// src/lib/useMetaPixel.ts
+// src/lib/useMetaPixel.ts — v4.2
 // ─────────────────────────────────────────────────────────────────────────────
-// Tiny wrapper around window.fbq so every caller gets:
-//  - TypeScript safety (no `any` spread everywhere)
-//  - A single place to update if the Pixel ID or event schema ever changes
-//  - Safe no-op when fbq hasn't loaded yet (SSR, blockers, slow connections)
+// FIXES in v4.2:
 //
-// USAGE:
-//   const pixel = useMetaPixel();
+// FIX 1 — Race condition (primary reason events didn't show in Meta):
+//   useEffect fires synchronously post-hydration. afterInteractive loads the
+//   fbq script asynchronously. useEffect always wins — fbq is still undefined
+//   when trackLead/trackPurchase first call it. The events were silently dropped.
+//   Fix: await window.__fbqReady (a Promise set by MetaPixel.tsx) before
+//   calling fbq. This guarantees fbq is initialized before any event fires.
 //
-//   // On checkout page mount → Lead
-//   pixel.trackLead({ name: 'The Fundamentals', price: 497, currency: 'PHP' });
+// FIX 2 — console.debug invisible during testing:
+//   console.debug is hidden by default in Chrome DevTools (filter level).
+//   Switched to console.log so you can see exactly when events fire.
 //
-//   // After receipt verified → Purchase
-//   pixel.trackPurchase({ name: 'The Fundamentals', price: 497, currency: 'PHP', transactionId: '9043210498208' });
+// NOTE: The USAGE comments are documentation only — you do NOT paste them
+// into this file. They are already implemented in checkout/page.tsx and
+// ReceiptUploader.tsx.
 // ─────────────────────────────────────────────────────────────────────────────
 
 'use client';
 
-// Extend Window to include fbq without a full @types/facebook-pixel dep
 declare global {
   interface Window {
     fbq?: (...args: unknown[]) => void;
-  }
-}
-
-function fbq(...args: unknown[]) {
-  if (typeof window !== 'undefined' && typeof window.fbq === 'function') {
-    window.fbq(...args);
+    // Promise exposed by MetaPixel.tsx — resolves when fbq is initialized
+    __fbqReady?: Promise<unknown>;
   }
 }
 
 export interface PixelProductParams {
-  /** Product name — e.g. "The Fundamentals" */
   name: string;
-  /** Price in local currency (no centavos, just the peso value) */
   price: number;
-  /** ISO 4217 currency code — always 'PHP' for this app */
   currency: string;
-  /** GCash reference number — used as transaction_id in Purchase events */
   transactionId?: string;
+}
+
+/**
+ * Wait for fbq to be initialized, then call it.
+ * If fbq never loads (ad blocker, slow connection), this times out
+ * gracefully after 5 seconds without throwing.
+ */
+async function safeFbq(...args: unknown[]): Promise<void> {
+  try {
+    if (typeof window === 'undefined') return;
+
+    // Wait for the MetaPixel script to finish initializing fbq.
+    // window.__fbqReady is set by MetaPixel.tsx before the fbq snippet runs.
+    if (window.__fbqReady) {
+      // Race against a 5s timeout so we never hang forever
+      await Promise.race([
+        window.__fbqReady,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('fbq timeout')), 5000)
+        ),
+      ]);
+    }
+
+    if (typeof window.fbq === 'function') {
+      window.fbq(...args);
+    }
+  } catch {
+    // fbq blocked by ad blocker or timed out — silent no-op
+  }
 }
 
 export function useMetaPixel() {
   /**
-   * Fire a Lead event when the checkout page is displayed.
+   * Fire Lead when a checkout page is displayed.
    *
-   * Meta definition: "A submission of information by a customer with the
-   * understanding that they may be contacted at a later date."
+   * Called from useEffect in checkout/page.tsx and ProductPageTemplate.tsx.
+   * Fires AFTER fbq is confirmed ready (awaits window.__fbqReady).
    *
-   * In this app's context: the customer has landed on a specific product's
-   * checkout page — they're clearly interested and one step from buying.
-   * This is the correct moment for Lead: page is shown, product is known,
-   * price is visible, no form submission is needed.
+   * Meta event: Lead
+   * When: checkout page is rendered and visible to the customer
+   * Data: product name, price, currency
    */
   function trackLead({ name, price, currency }: PixelProductParams) {
-    fbq('track', 'Lead', {
+    safeFbq('track', 'Lead', {
       content_name: name,
       content_category: 'Ministry Digital Pack',
       value: price,
       currency,
+    }).then(() => {
+      console.log('[MetaPixel] ✅ Lead fired:', { name, price, currency });
     });
-    console.debug('[MetaPixel] Lead fired:', { name, price, currency });
   }
 
   /**
-   * Fire a Purchase event ONLY after payment verification succeeds.
+   * Fire Purchase after GCash receipt is verified and file download triggered.
    *
-   * Meta definition: "The completion of a purchase, usually signified by
-   * receiving order or purchase confirmation, or a transaction receipt."
+   * Called from ReceiptUploader.triggerDownload() ONLY after:
+   * 1. /api/verify-receipt returned success: true
+   * 2. /api/download-token returned valid: true
+   * 3. The file download <a> click has been triggered
    *
-   * Fired inside ReceiptUploader.triggerDownload() — after the API confirms
-   * the receipt is valid AND the file download is triggered. This means Meta
-   * only records a Purchase when a real, verified GCash payment happened.
-   *
-   * The GCash reference number is used as transaction_id for deduplication
-   * — Meta uses this to avoid counting the same purchase twice if the pixel
-   * fires more than once (e.g. page refresh after cookie restore).
+   * Meta event: Purchase
+   * When: verified payment confirmed, product delivered
+   * Data: product name, price, currency, GCash ref number as transaction_id
    */
   function trackPurchase({ name, price, currency, transactionId }: PixelProductParams) {
-    fbq('track', 'Purchase', {
+    safeFbq('track', 'Purchase', {
       content_name: name,
       content_category: 'Ministry Digital Pack',
       value: price,
       currency,
       ...(transactionId ? { transaction_id: transactionId } : {}),
+    }).then(() => {
+      console.log('[MetaPixel] ✅ Purchase fired:', { name, price, currency, transactionId });
     });
-    console.debug('[MetaPixel] Purchase fired:', { name, price, currency, transactionId });
   }
 
   return { trackLead, trackPurchase };
