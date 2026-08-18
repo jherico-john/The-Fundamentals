@@ -3,12 +3,14 @@
 // Shared template for all non-Fundamentals product pages.
 // AffiliateSidebar automatically shows cards for every OTHER product.
 
+import { useEffect } from 'react';
 import { CheckCircle2, Zap, Star, Lock, BookOpen, Play, Shield } from 'lucide-react';
 import NavBar from '@/components/NavBar';
 import ReceiptUploader from '@/components/ReceiptUploader';
 import PaymentTutorial from '@/components/PaymentTutorial';
 // - [Not available] import AffiliateSidebar from '@/components/AffiliateSidebar';
 import SupportSection from '@/components/SupportSection';
+import { useMetaPixel } from '@/lib/useMetaPixel';
 
 export interface ProductConfig {
   /** Must match the env var suffix and products.ts slug */
@@ -29,6 +31,14 @@ export interface ProductConfig {
 const CUR = process.env.NEXT_PUBLIC_CURRENCY || 'PHP';
 
 export default function ProductPageTemplate({ config }: { config: ProductConfig }) {
+  const pixel = useMetaPixel();
+
+  // Fire Lead when this product's checkout page is displayed.
+  // config.name and config.price are dynamic — correct per product automatically.
+  useEffect(() => {
+    pixel.trackLead({ name: config.name, price: config.price, currency: CUR });
+  }, [config.slug]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <main className="relative min-h-screen bg-radial-glow">
       <NavBar product={config.name} />
@@ -82,31 +92,30 @@ export default function ProductPageTemplate({ config }: { config: ProductConfig 
               </div>
               */}
               <div
-  className="w-full h-28 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden"
-  style={{ background: 'linear-gradient(135deg, #0D3B20, #051A0D)' }}
->
-  {config.coverImage ? (
-    <img
-      src={config.coverImage}
-      alt={config.name}
-      className="w-full h-full object-contain float-anim z-10"
-    />
-  ) : (
-    <div className="text-center z-10">
-      <BookOpen
-        size={32}
-        className="text-[var(--green)] mx-auto mb-1 float-anim"
-      />
-      <p className="text-xs text-[var(--green)] tracking-widest uppercase font-semibold">
-        {config.lessons} Lessons
-      </p>
-    </div>
-  )}
-
-  <div className="absolute -top-2 -right-2 w-16 h-24 rounded-lg bg-[var(--surface)] border border-[var(--border)] rotate-6 opacity-40" />
-  <div className="absolute -top-1 right-2 w-16 h-24 rounded-lg bg-[var(--surface)] border border-[var(--border)] rotate-3 opacity-60" />
-</div>
-
+                className="w-full h-28 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden"
+                style={{ background: 'linear-gradient(135deg, #0D3B20, #051A0D)' }}
+              >
+                {config.coverImage ? (
+                  <img
+                    src={config.coverImage}
+                    alt={config.name}
+                    className="w-full h-full object-contain float-anim z-10"
+                  />
+                ) : (
+                  <div className="text-center z-10">
+                    <BookOpen
+                      size={32}
+                      className="text-[var(--green)] mx-auto mb-1 float-anim"
+                    />
+                    <p className="text-xs text-[var(--green)] tracking-widest uppercase font-semibold">
+                      {config.lessons} Lessons
+                    </p>
+                  </div>
+                )}
+              
+                <div className="absolute -top-2 -right-2 w-16 h-24 rounded-lg bg-[var(--surface)] border border-[var(--border)] rotate-6 opacity-40" />
+                <div className="absolute -top-1 right-2 w-16 h-24 rounded-lg bg-[var(--surface)] border border-[var(--border)] rotate-3 opacity-60" />
+              </div>
               <h3 className="text-2xl font-bold text-white mb-1"
                 style={{ fontFamily: 'Bebas Neue, Impact, sans-serif' }}>{config.name}</h3>
               <p className="text-xs text-gray-400 mb-3">
