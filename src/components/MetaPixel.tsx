@@ -1,4 +1,14 @@
 'use client';
+// src/components/MetaPixel.tsx
+// ─────────────────────────────────────────────────────────────────────────────
+// Base Meta Pixel component — loads the fbq script ONCE on every page.
+// Only fires PageView here. Lead and Purchase are fired separately from the
+// pages/components where those actions actually happen (checkout → Lead,
+// ReceiptUploader success → Purchase).
+//
+// Pixel ID: 1024772523807392
+// To test events: Meta Events Manager → Data Sources → Pixel → Test Events
+// ─────────────────────────────────────────────────────────────────────────────
 
 import Script from 'next/script';
 
@@ -20,13 +30,11 @@ export default function MetaPixel() {
             t.src=v;s=b.getElementsByTagName(e)[0];
             s.parentNode.insertBefore(t,s)}(window, document,'script',
             'https://connect.facebook.net/en_US/fbevents.js');
-
             fbq('init', '${PIXEL_ID}');
             fbq('track', 'PageView');
           `,
         }}
       />
-
       <noscript>
         <img
           height="1"
