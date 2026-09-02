@@ -3,6 +3,7 @@ import { Suspense } from 'react';
 import './globals.css';
 import AffiliateTracker from '@/components/AffiliateTracker';
 import MetaPixel from '@/components/MetaPixel';
+import TikTokPixel from '@/components/TikTokPixel';
 
 export const metadata: Metadata = {
   title: 'Ministry Pack — The Fundamentals',
@@ -20,6 +21,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         {/* Meta Pixel — base code + PageView on every page */}
         <MetaPixel />
+        {/* TikTok Pixel — base code + PageView on every page */}
+        <TikTokPixel />
         {/* Affiliate ref cookie tracker */}
         <Suspense fallback={null}><AffiliateTracker /></Suspense>
         {children}
