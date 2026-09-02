@@ -7,5 +7,7 @@ node_modules/
 *.tsbuildinfo
 next-env.d.ts
 error/
+ministry-v4-meta-pixel.zip
+.backup/
 task/
 .env.temp
