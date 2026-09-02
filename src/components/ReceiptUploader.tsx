@@ -1,5 +1,6 @@
 'use client';
 import { useMetaPixel } from '@/lib/useMetaPixel';
+import { useTikTokPixel } from '@/lib/useTikTokPixel';
 // ReceiptUploader — v4.1
 // Changes: added QR Download button, cleaner GCash panel for mobile users.
 
@@ -28,7 +29,8 @@ const CUR        = process.env.NEXT_PUBLIC_CURRENCY      || 'PHP';
 const EMAIL      = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'jhericojohnbalasa@gmail.com';
 
 export default function ReceiptUploader({ productSlug, productName, price, downloadPage }: Props) {
-  const pixel = useMetaPixel();
+  const pixel  = useMetaPixel();
+  const tiktok = useTikTokPixel();
   const [stage, setStage]         = useState<Stage>('checking');
   const [drag, setDrag]           = useState(false);
   const [preview, setPreview]     = useState<string | null>(null);
@@ -117,7 +119,17 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
         currency: 'PHP',
         transactionId: data.referenceNumber || undefined,
       });
-      // ────────────────────────────────────────────────────────────────────
+      // ── TikTok Pixel: Purchase ────────────────────────────────────────────
+      // Same timing as Meta Purchase — only fires after real payment verified.
+      // order_id = GCash reference number for TikTok deduplication.
+      tiktok.trackPurchase({
+        name: productName,
+        price: safePrice,
+        currency: 'PHP',
+        transactionId: data.referenceNumber || undefined,
+        contentId: productSlug,
+      });
+      // ─────────────────────────────────────────────────────────────────────
 
       if (data.downloadPageUrl) setTimeout(() => { window.location.href = data.downloadPageUrl; }, 3000);
     } catch { setError('Download error. Use the button below to access your files.'); }

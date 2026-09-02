@@ -11,6 +11,7 @@ import PaymentTutorial from '@/components/PaymentTutorial';
 // - [Not available] import AffiliateSidebar from '@/components/AffiliateSidebar';
 import SupportSection from '@/components/SupportSection';
 import { useMetaPixel } from '@/lib/useMetaPixel';
+import { useTikTokPixel } from '@/lib/useTikTokPixel';
 
 export interface ProductConfig {
   /** Must match the env var suffix and products.ts slug */
@@ -31,15 +32,16 @@ export interface ProductConfig {
 const CUR = process.env.NEXT_PUBLIC_CURRENCY || 'PHP';
 
 export default function ProductPageTemplate({ config }: { config: ProductConfig }) {
-  const pixel = useMetaPixel();
+  const pixel  = useMetaPixel();
+  const tiktok = useTikTokPixel();
 
-  // Fire Lead when this product's checkout page is displayed.
+  // Fire Meta Lead + TikTok ViewContent when any product's checkout page loads.
   // config.name and config.price are dynamic — correct per product automatically.
   useEffect(() => {
-    // Guard: ensure price is a valid number before firing (Meta drops NaN events)
     const safePrice = Number.isFinite(config.price) ? config.price : 0;
     const safeCurrency = CUR || 'PHP';
     pixel.trackLead({ name: config.name, price: safePrice, currency: safeCurrency });
+    tiktok.trackViewContent({ name: config.name, price: safePrice, currency: safeCurrency, contentId: config.slug });
   }, [config.slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
