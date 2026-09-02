@@ -28,11 +28,18 @@ function SignupForm() {
       const res  = await fetch('/api/auth/register', { method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ name, email, password, referredByCode }) });
       const data = await res.json();
-      if (!res.ok) { setError(data.error || 'Registration failed.'); return; }
+      if (!res.ok) {
+        setError(data.error || 'Registration failed.');
+        setLoading(false);
+        return;
+      }
+      // Show success state — keep button loading during the brief redirect delay
       setDone(true);
       setTimeout(() => { window.location.href = '/checkout'; }, 1500);
-    } catch { setError('Network error. Please try again.'); }
-    finally { setLoading(false); }
+    } catch {
+      setError('Network error. Please try again.');
+      setLoading(false);
+    }
   };
 
   if (done) return (

@@ -11,8 +11,14 @@ export default function NavBar({ product = 'The Fundamentals' }: { product?: str
 
   useEffect(() => {
     fetch('/api/auth/me').then(r => r.json()).then(d => {
-      if (d.authenticated === false && d.name) setUser({ name: d.name, email: d.email });
-      else if (d.name) setUser({ name: d.name, email: d.email });
+      if (!d.authenticated) return;
+      // Admin: d = { authenticated, role:'admin', email }
+      // Customer: d = { authenticated, role:'customer', customer:{ id, name, email } }
+      if (d.role === 'admin') {
+        setUser({ name: 'Admin', email: d.email || '' });
+      } else if (d.role === 'customer' && d.customer) {
+        setUser({ name: d.customer.name, email: d.customer.email });
+      }
     }).catch(() => {});
   }, []);
 

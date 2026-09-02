@@ -16,11 +16,19 @@ export default function LoginPage() {
     try {
       const res  = await fetch('/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password }) });
       const data = await res.json();
-      if (!res.ok) { setError(data.error || 'Login failed.'); return; }
-      // Redirect admin to dashboard, customers back to checkout
+      if (!res.ok) {
+        // Only reset loading on error — navigation handles the success case
+        setError(data.error || 'Login failed.');
+        setLoading(false);
+        return;
+      }
+      // Keep button in loading state during navigation (looks better than flashing)
+      // Admin → dashboard, customers → back to checkout where they can see their profile
       window.location.href = data.role === 'admin' ? '/dashboard' : '/checkout';
-    } catch { setError('Network error. Please try again.'); }
-    finally { setLoading(false); }
+    } catch {
+      setError('Network error. Please try again.');
+      setLoading(false);
+    }
   };
 
   return (
