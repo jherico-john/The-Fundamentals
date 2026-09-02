@@ -9,6 +9,7 @@ import PaymentTutorial from '@/components/PaymentTutorial';
 import SupportSection from '@/components/SupportSection';
 // - [Not available] import AffiliateNotice from '@/components/AffiliateNotice';
 import { useMetaPixel } from '@/lib/useMetaPixel';
+import { useTikTokPixel } from '@/lib/useTikTokPixel';
 
 const FEATURES = [
   { icon:<Play size={18}/>, label:'📄 Introduction Guide', sub:'A complete facilitator guide explaining how to use the curriculum effectively in your church, youth ministry, or small group.' },
@@ -30,7 +31,8 @@ const DL_PAGE = process.env.NEXT_PUBLIC_DOWNLOAD_PAGE_URL_FUNDAMENTALS
   || 'https://jhericojohnbalasa.systeme.io/fundementals-truth';
 
 export default function CheckoutPage() {
-  const pixel = useMetaPixel();
+  const pixel    = useMetaPixel();
+  const tiktok   = useTikTokPixel();
 
   // FIX: Read price inside the component at runtime, not at module level.
   // Module-level parseInt(process.env...) can yield NaN if the env var is
@@ -38,10 +40,11 @@ export default function CheckoutPage() {
   const leadPrice = parseInt(process.env.NEXT_PUBLIC_PRODUCT_FUNDAMENTALS_PRICE || '497') || 497;
   const leadCurrency = process.env.NEXT_PUBLIC_CURRENCY || 'PHP';
 
-  // Fire Lead when this checkout page is displayed.
-  // useEffect runs after fbq is ready (awaited inside safeFbq).
+  // Fire Meta Lead + TikTok ViewContent when this checkout page is displayed.
+  // Both hooks await their respective pixel readiness Promises before firing.
   useEffect(() => {
     pixel.trackLead({ name: 'The Fundamentals', price: leadPrice, currency: leadCurrency });
+    tiktok.trackViewContent({ name: 'The Fundamentals', price: leadPrice, currency: leadCurrency, contentId: 'fundamentals' });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
