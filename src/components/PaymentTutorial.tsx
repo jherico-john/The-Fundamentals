@@ -195,7 +195,7 @@ export default function PaymentTutorial() {
       {/* Quick summary below */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5 max-w-3xl mx-auto">
         {[
-          { emoji: '📱', label: 'GCash App',      sub: 'Any Philippine bank supported' },
+          { emoji: '📱', label: 'GCash App',      sub: 'Banks & e-wallets via InstaPay' },
           { emoji: '⬇️', label: 'Download Receipt', sub: 'Use GCash\'s Download button' },
           { emoji: '📤', label: 'Upload Here',     sub: 'Verified in seconds' },
           { emoji: '✅', label: 'Instant Access',  sub: 'File delivered immediately' },

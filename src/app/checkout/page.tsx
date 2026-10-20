@@ -5,8 +5,12 @@ import { CheckCircle2, Zap, Users, Star, Lock, BookOpen, Play, Shield } from 'lu
 import NavBar from '@/components/NavBar';
 import ReceiptUploader from '@/components/ReceiptUploader';
 import PaymentTutorial from '@/components/PaymentTutorial';
+import BridgePaymentGuide from '@/components/BridgePaymentGuide';
 // - [Not available] import AffiliateSidebar from '@/components/AffiliateSidebar';
 import SupportSection from '@/components/SupportSection';
+import SiteFooter from '@/components/SiteFooter';
+import { useGoogleAds } from '@/lib/useGoogleAds';
+import { getProductBySlug, getDownloadPageUrl } from '@/lib/products';
 // - [Not available] import AffiliateNotice from '@/components/AffiliateNotice';
 import { useMetaPixel } from '@/lib/useMetaPixel';
 import { useTikTokPixel } from '@/lib/useTikTokPixel';
@@ -25,26 +29,28 @@ const TESTIMONIALS = [
   { name:'Bro. Joel M.', role:'Cell Group Facilitator', text:"Worth every peso. I've tried making slides myself — this is on another level.", stars:5 },
 ];
 
-const PRICE = parseInt(process.env.NEXT_PUBLIC_PRODUCT_FUNDAMENTALS_PRICE || '497');
+const PRICE = getProductBySlug('fundamentals')!.price;
 const CUR   = process.env.NEXT_PUBLIC_CURRENCY || 'PHP';
-const DL_PAGE = process.env.NEXT_PUBLIC_DOWNLOAD_PAGE_URL_FUNDAMENTALS
-  || 'https://jhericojohnbalasa.systeme.io/fundementals-truth';
+const DL_PAGE = getDownloadPageUrl('fundamentals');
 
 export default function CheckoutPage() {
   const pixel    = useMetaPixel();
   const tiktok   = useTikTokPixel();
+  const google   = useGoogleAds();
 
   // FIX: Read price inside the component at runtime, not at module level.
   // Module-level parseInt(process.env...) can yield NaN if the env var is
   // missing at build time — Meta silently drops events with NaN values.
-  const leadPrice = parseInt(process.env.NEXT_PUBLIC_PRODUCT_FUNDAMENTALS_PRICE || '497') || 497;
+  const leadPrice = PRICE;
   const leadCurrency = process.env.NEXT_PUBLIC_CURRENCY || 'PHP';
 
   // Fire Meta Lead + TikTok ViewContent when this checkout page is displayed.
   // Both hooks await their respective pixel readiness Promises before firing.
   useEffect(() => {
-    pixel.trackLead({ name: 'The Fundamentals', price: leadPrice, currency: leadCurrency });
+    // Each helper skips automatically when this device already bought Fundamentals
+    pixel.trackLead({ name: 'The Fundamentals', price: leadPrice, currency: leadCurrency, contentId: 'fundamentals' });
     tiktok.trackViewContent({ name: 'The Fundamentals', price: leadPrice, currency: leadCurrency, contentId: 'fundamentals' });
+    google.trackViewContent({ slug: 'fundamentals', name: 'The Fundamentals', price: leadPrice, currency: leadCurrency });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -57,7 +63,7 @@ export default function CheckoutPage() {
         <section className="text-center mb-14 fade-up">
           <div className="inline-flex items-center gap-2 bg-[var(--card)] border border-[var(--border)] rounded-full px-4 py-1.5 text-xs text-[var(--green)] font-medium mb-6 tracking-wider uppercase">
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--green)] animate-pulse inline-block"/>
-            Pay via GCash · Instant Digital Access
+            Pay via GCash or any bank / e-wallet · Instant Access
           </div>
           <h1 className="text-5xl md:text-7xl font-bold mb-4"
             style={{fontFamily:'Bebas Neue,Impact,sans-serif',color:'#fff',lineHeight:1.05}}>
@@ -100,13 +106,13 @@ export default function CheckoutPage() {
               <p className="text-xs text-gray-400 mb-4">16 Ready-to-Teach PPT Sessions · Instant Digital Download</p>
               <div className="flex items-baseline gap-2 mb-4">
                 <span className="text-3xl font-extrabold text-[var(--green)]">{CUR} {PRICE.toLocaleString()}</span>
-                <span className="text-gray-500 line-through text-base">{CUR} 997</span>
-                <span className="bg-[var(--green-deeper)] text-[var(--green)] text-xs font-bold px-2 py-0.5 rounded-full">50% OFF</span>
+                <span className="text-gray-500 line-through text-base">{CUR} {getProductBySlug('fundamentals')!.originalPrice.toLocaleString()}</span>
+                <span className="bg-[var(--green-deeper)] text-[var(--green)] text-xs font-bold px-2 py-0.5 rounded-full">{Math.round((1 - PRICE / getProductBySlug('fundamentals')!.originalPrice) * 100)}% OFF</span>
               </div>
               <div className="space-y-1.5 mb-5">
                 {[
-                  {n:'1',t:'Send GCash payment to our number'},
-                  {n:'2',t:'Download your GCash receipt'},
+                  {n:'1',t:'Pay via GCash (or any bank / e-wallet)'},
+                  {n:'2',t:'Save the full payment receipt'},
                   {n:'3',t:'Upload receipt below to verify'},
                   {n:'4',t:'File downloads automatically! 🎉'},
                 ].map(s=>(
@@ -132,7 +138,7 @@ export default function CheckoutPage() {
               Pay & Get Instant Access
             </h2>
             <p className="text-gray-400 text-sm">
-              Send {CUR} {PRICE.toLocaleString()} via GCash then upload your receipt below.
+              Send {CUR} {PRICE.toLocaleString()} via GCash (or a bank / e-wallet through InstaPay) then upload your receipt below.
             </p>
           </div>
           <div className="max-w-xl mx-auto">
@@ -146,6 +152,7 @@ export default function CheckoutPage() {
         </section>
 
         <PaymentTutorial />
+        <BridgePaymentGuide />
 
         {/* Testimonials */}
         <section className="mb-16 fade-up-3">
@@ -178,15 +185,7 @@ export default function CheckoutPage() {
 
         <SupportSection />
 
-        <footer className="text-center text-xs text-gray-600 pb-8 mt-8">
-          <p>© {new Date().getFullYear()} The Fundamentals Ministry by Jherico Balasa. All rights reserved.</p>
-          <p className="mt-1">
-            Need help?{' '}
-            <a href="mailto:jhericojohnbalasa@gmail.com" className="text-[var(--green)] hover:underline">
-              jhericojohnbalasa@gmail.com
-            </a>
-          </p>
-        </footer>
+        <SiteFooter pageName="The Fundamentals" />
       </div>
     </main>
   );

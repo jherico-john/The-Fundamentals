@@ -1,8 +1,14 @@
 'use client';
 import { useMetaPixel } from '@/lib/useMetaPixel';
 import { useTikTokPixel } from '@/lib/useTikTokPixel';
-// ReceiptUploader — v4.1
-// Changes: added QR Download button, cleaner GCash panel for mobile users.
+import { useGoogleAds } from '@/lib/useGoogleAds';
+import PaymentChannelsPanel from '@/components/PaymentChannelsPanel';
+import type { ReceiptError } from '@/lib/receiptErrors';
+// ReceiptUploader — v5
+// • Hybrid payments: GCash primary + banks/e-wallets bridged through InstaPay
+// • Channel-aware error cards (title, explanation, fix steps, what we read)
+// • Meta + TikTok + Google Ads purchase events, fired with the CATALOG price
+// • Bundle purchases download every included file
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
@@ -21,6 +27,7 @@ type Stage = 'checking' | 'idle' | 'verifying' | 'success' | 'error';
 interface VerifiedData {
   referenceNumber: string; amount: number; dateStr: string;
   token: string; productSlug: string; warnings?: string[]; testMode?: boolean;
+  channelLabel?: string; transferFee?: number | null;
 }
 
 const GCASH_NUM  = process.env.NEXT_PUBLIC_GCASH_NUMBER  || '09XX XXX XXXX';
@@ -31,6 +38,9 @@ const EMAIL      = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'jhericojohnbalasa@g
 export default function ReceiptUploader({ productSlug, productName, price, downloadPage }: Props) {
   const pixel  = useMetaPixel();
   const tiktok = useTikTokPixel();
+  const google = useGoogleAds();
+  const [errDetail, setErrDetail] = useState<ReceiptError | null>(null);
+  const convRef = useRef<{ value: number; currency: string; newCustomer?: boolean } | null>(null);
   const [stage, setStage]         = useState<Stage>('checking');
   const [drag, setDrag]           = useState(false);
   const [preview, setPreview]     = useState<string | null>(null);
@@ -75,7 +85,7 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
 
   const processFile = useCallback(async (file: File) => {
     setPreview(URL.createObjectURL(file)); setFname(file.name);
-    setStage('verifying'); setError(''); setVerified(null); setDlDone(false);
+    setStage('verifying'); setError(''); setErrDetail(null); setVerified(null); setDlDone(false);
     startProg();
     const form = new FormData();
     form.append('receipt', file);
@@ -86,8 +96,11 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
       const res  = await fetch('/api/verify-receipt', { method: 'POST', body: form });
       endProg();
       const data = await res.json();
-      if (!res.ok || !data.success) { setStage('error'); setError(data.error || 'Verification failed.'); return; }
-      setVerified({ referenceNumber: data.data.referenceNumber, amount: data.data.amount, dateStr: data.data.dateStr, token: data.token, productSlug, warnings: data.warnings, testMode: data.testMode });
+      if (!res.ok || !data.success) {
+        setStage('error'); setError(data.error || 'Verification failed.'); setErrDetail(data.errorDetail || null); return;
+      }
+      convRef.current = data.conversion || null;
+      setVerified({ referenceNumber: data.data.referenceNumber, amount: data.data.amount, dateStr: data.data.dateStr, token: data.token, productSlug, warnings: data.warnings, testMode: data.testMode, channelLabel: data.data.channelLabel, transferFee: data.data.transferFee });
       setStage('success');
       triggerDownload(data.token);
     } catch { endProg(); setStage('error'); setError('Network error. Please check your connection and try again.'); }
@@ -100,42 +113,30 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
       const data = await res.json();
       if (!res.ok || !data.valid) { setError(`Download error: ${data.error}`); return; }
       setDlDone(true);
-      if (data.fileUrl) {
+      const files: { name: string; url: string }[] = data.files?.length ? data.files : data.fileUrl ? [{ name: productName, url: data.fileUrl }] : [];
+      files.forEach((f, i) => setTimeout(() => {
         const a = document.createElement('a');
-        a.href = data.fileUrl; a.download = `${productName.replace(/\s+/g,'-')}.zip`; a.target = '_blank';
+        a.href = f.url; a.download = `${f.name.replace(/\s+/g, '-')}.zip`; a.target = '_blank'; a.rel = 'noopener';
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      }
+      }, i * 900));
 
-      // ── Meta Pixel: Purchase ─────────────────────────────────────────────
-      // Fired ONLY here — after the API confirmed the receipt is valid AND
-      // the file download has been triggered. This is the exact moment Meta
-      // considers a "Purchase": payment confirmed, product delivered.
-      // transactionId = GCash reference number (used by Meta for deduplication).
-      // safePrice guards against NaN — Meta silently drops events with NaN value.
-      const safePrice = Number.isFinite(price) && price > 0 ? price : 0;
-      pixel.trackPurchase({
-        name: productName,
-        price: safePrice,
-        currency: 'PHP',
-        transactionId: data.referenceNumber || undefined,
-      });
-      // ── TikTok Pixel: Purchase ────────────────────────────────────────────
-      // Same timing as Meta Purchase — only fires after real payment verified.
-      // order_id = GCash reference number for TikTok deduplication.
-      tiktok.trackPurchase({
-        name: productName,
-        price: safePrice,
-        currency: 'PHP',
-        transactionId: data.referenceNumber || undefined,
-        contentId: productSlug,
-      });
+      // ── Purchase events: Meta + TikTok + Google Ads ──────────────────────
+      // Fired ONLY after the receipt was verified AND the download triggered.
+      // value = CATALOG price (e.g. 397 even if the bank added a ₱10 fee), so
+      // all three engines report the same revenue per product.
+      const conv = convRef.current;
+      const safePrice = conv && Number.isFinite(conv.value) && conv.value > 0 ? conv.value : (Number.isFinite(price) && price > 0 ? price : 0);
+      const tx = data.referenceNumber || undefined;
+      pixel.trackPurchase({ name: productName, price: safePrice, currency: 'PHP', transactionId: tx, contentId: productSlug });
+      tiktok.trackPurchase({ name: productName, price: safePrice, currency: 'PHP', transactionId: tx, contentId: productSlug });
+      google.trackPurchase({ slug: productSlug, name: productName, price: safePrice, currency: 'PHP', transactionId: tx, newCustomer: conv?.newCustomer });
       // ─────────────────────────────────────────────────────────────────────
 
       if (data.downloadPageUrl) setTimeout(() => { window.location.href = data.downloadPageUrl; }, 3000);
     } catch { setError('Download error. Use the button below to access your files.'); }
   };
 
-  const reset = () => { setStage('idle'); setPreview(null); setFname(''); setError(''); setVerified(null); setDlDone(false); setProg(0); if (fileRef.current) fileRef.current.value = ''; };
+  const reset = () => { setStage('idle'); setPreview(null); setFname(''); setError(''); setErrDetail(null); setVerified(null); setDlDone(false); setProg(0); if (fileRef.current) fileRef.current.value = ''; };
   const buyAgain = async () => { setResetting(true); try { await fetch(`/api/purchase-status?product=${productSlug}`, { method: 'DELETE' }); } finally { setResetting(false); reset(); } };
   const copyNum = async () => { await navigator.clipboard.writeText(GCASH_NUM.replace(/\s/g,'')); setCopiedNum(true); setTimeout(() => setCopiedNum(false), 2000); };
   const downloadQR = () => {
@@ -158,7 +159,7 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
         <div className="glass-card p-6" style={{ borderColor: 'rgba(0,255,135,0.25)' }}>
           <div className="flex items-center gap-2 mb-5">
             <div className="w-7 h-7 rounded-full bg-[var(--green)] flex items-center justify-center text-black text-xs font-extrabold">1</div>
-            <h3 className="font-bold text-white">Send Payment via GCash</h3>
+            <h3 className="font-bold text-white">Send Payment — GCash or any bank / e-wallet</h3>
           </div>
 
           <div className="grid sm:grid-cols-2 gap-5">
@@ -217,7 +218,7 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
 
               <div className="flex items-start gap-2 text-xs text-yellow-300 bg-yellow-950 bg-opacity-40 border border-yellow-800 rounded-lg p-2.5">
                 <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
-                <span>Send the <strong>exact amount</strong> — wrong amounts fail verification.</span>
+                <span>Send <strong>{CUR} {price.toLocaleString()}</strong> to this account. Transfer fees added by your bank or e-wallet are accepted automatically.</span>
               </div>
             </div>
           </div>
@@ -238,9 +239,11 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
             </div>
           </div>
 
+          <PaymentChannelsPanel />
+
           <div className="mt-3 flex items-center gap-2 text-xs text-gray-400">
             <Smartphone size={13} className="text-[var(--green)]" />
-            <span>After paying, tap <strong className="text-white">Download</strong> at the bottom of the GCash success screen to save your receipt.</span>
+            <span>After paying, save the <strong className="text-white">full receipt</strong> from your app (GCash: <em>Download</em>; banks / Maya: <em>Save Image</em> or screenshot of the complete receipt).</span>
           </div>
         </div>
       )}
@@ -250,7 +253,7 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
         {stage !== 'success' && (
           <div className="flex items-center gap-2 mb-4">
             <div className="w-7 h-7 rounded-full bg-[var(--border)] text-gray-300 flex items-center justify-center text-xs font-extrabold">2</div>
-            <h3 className="font-bold text-white">Upload Your GCash Receipt</h3>
+            <h3 className="font-bold text-white">Upload Your Payment Receipt</h3>
           </div>
         )}
 
@@ -264,7 +267,7 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
             onDrop={e => { e.preventDefault(); setDrag(false); const f = e.dataTransfer.files[0]; if (f) processFile(f); }}
           >
             <Upload size={36} className="text-[var(--green)] mx-auto mb-3" />
-            <p className="text-white font-semibold mb-1">Tap to upload your GCash receipt</p>
+            <p className="text-white font-semibold mb-1">Tap to upload your payment receipt</p>
             <p className="text-gray-500 text-xs">or drag & drop · JPG, PNG, WEBP · Max 10MB</p>
           </div>
         )}
@@ -289,8 +292,8 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
             <div className="flex items-center gap-3 p-3 bg-[var(--bg)] rounded-xl border border-[var(--border)]">
               <Loader2 size={18} className="text-[var(--green)] animate-spin" />
               <div>
-                <p className="text-white text-sm font-medium">Verifying GCash receipt…</p>
-                <p className="text-gray-500 text-xs">Scanning QR · Checking amount · Anti-editing validation</p>
+                <p className="text-white text-sm font-medium">Verifying your receipt…</p>
+                <p className="text-gray-500 text-xs">Reading receipt · Checking amount & recipient · Anti-editing & anti-replay checks</p>
               </div>
             </div>
           </div>
@@ -308,17 +311,30 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
               <div className="flex-1">
                 <div className="flex items-start gap-2 p-3 bg-red-950 bg-opacity-50 border border-red-800 rounded-xl">
                   <XCircle size={18} className="text-red-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-red-300 font-semibold text-sm mb-1">Verification Failed</p>
-                    <p className="text-red-200 text-xs leading-relaxed">{error}</p>
+                  <div data-testid="receipt-error">
+                    <p className="text-red-300 font-semibold text-sm mb-1">{errDetail?.title || 'Verification Failed'}</p>
+                    <p className="text-red-200 text-xs leading-relaxed">{errDetail?.message || error}</p>
+                    {errDetail?.fixes?.length ? (
+                      <ul className="mt-2 space-y-1 text-xs text-red-100 list-disc pl-4">
+                        {errDetail.fixes.map((f, i) => <li key={i}>{f}</li>)}
+                      </ul>
+                    ) : null}
+                    {errDetail?.detected && (errDetail.detected.amount || errDetail.detected.reference) ? (
+                      <p className="mt-2 text-[10px] text-red-300/70">
+                        We read: {[errDetail.detected.channel && errDetail.detected.channel !== 'unknown' ? String(errDetail.detected.channel).toUpperCase() : null,
+                          errDetail.detected.amount ? `₱${errDetail.detected.amount.toFixed(2)}` : null,
+                          errDetail.detected.fee ? `fee ₱${errDetail.detected.fee.toFixed(2)}` : null,
+                          errDetail.detected.reference ? `ref ${errDetail.detected.reference}` : null].filter(Boolean).join(' · ')}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </div>
             </div>
             <div className="p-3 bg-yellow-950 bg-opacity-40 border border-yellow-800 rounded-xl text-xs text-yellow-300">
               <strong>Already paid?</strong> Email{' '}
-              <a href={`mailto:${EMAIL}?subject=Paid GCash but receipt failed - ${productName}`} className="underline font-semibold">{EMAIL}</a>{' '}
-              with your GCash reference number and receipt screenshot.
+              <a href={`mailto:${EMAIL}?subject=Paid but receipt failed - ${productName}`} className="underline font-semibold">{EMAIL}</a>{' '}
+              with your reference number and receipt image.
             </div>
             <button onClick={reset} className="w-full py-3 rounded-xl border border-[var(--border)] text-gray-300 hover:text-white hover:border-[var(--green)] transition-colors text-sm flex items-center justify-center gap-2">
               <RefreshCw size={15} /> Try Again
@@ -336,7 +352,7 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
                   {verified.token === '' ? 'Already Purchased ✅' : 'Receipt Verified! ✅'}
                 </p>
                 <p className="text-gray-300 text-xs">
-                  {verified.token === '' ? `You already purchased ${productName}. Use the button below to download.` : 'GCash payment confirmed.'}
+                  {verified.token === '' ? `You already purchased ${productName}. Use the button below to download.` : `Payment confirmed${verified.channelLabel ? ' via ' + verified.channelLabel : ''}.`}
                 </p>
               </div>
             </div>
@@ -356,7 +372,7 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
             <div className="grid grid-cols-3 gap-2">
               {[
                 { l: 'Ref No.', v: verified.referenceNumber },
-                { l: 'Amount', v: verified.amount > 0 ? `₱${verified.amount.toFixed(2)}` : 'N/A' },
+                { l: verified.channelLabel || 'Amount', v: verified.amount > 0 ? `₱${verified.amount.toFixed(2)}` : 'N/A' },
                 { l: 'Date', v: verified.dateStr },
               ].map(f => (
                 <div key={f.l} className="bg-[var(--bg)] rounded-xl p-3 border border-[var(--border)] text-center">
@@ -404,9 +420,9 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
         <div className="flex items-start gap-2 text-xs text-gray-500 px-1">
           <Info size={12} className="flex-shrink-0 mt-0.5 text-[var(--green-deeper)]" />
           <span>
-            Upload your GCash receipt screenshot — must clearly show the <strong className="text-gray-400">amount</strong>,{' '}
-            <strong className="text-gray-400">reference number</strong>, and <strong className="text-gray-400">date</strong>.
-            Do not crop or edit. Use the Download button in the GCash app, not a phone screenshot.
+            Upload the <strong className="text-gray-400">complete</strong> receipt — it must show the{' '}
+            <strong className="text-gray-400">amount</strong>, <strong className="text-gray-400">account number / name</strong>,{' '}
+            <strong className="text-gray-400">fee</strong> and <strong className="text-gray-400">reference number</strong>. Do not crop, edit or re-share an old receipt.
           </span>
         </div>
       )}
