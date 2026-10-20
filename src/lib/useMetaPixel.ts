@@ -28,7 +28,11 @@ declare global {
   }
 }
 
+import { hasBought } from './buyerState';
+
 export interface PixelProductParams {
+  /** product slug — used for already-purchased suppression and content_ids */
+  contentId?: string;
   name: string;
   price: number;
   currency: string;
@@ -75,8 +79,11 @@ export function useMetaPixel() {
    * When: checkout page is rendered and visible to the customer
    * Data: product name, price, currency
    */
-  function trackLead({ name, price, currency }: PixelProductParams) {
+  function trackLead({ name, price, currency, contentId }: PixelProductParams) {
+    // v5: don't count/retarget people who already bought this product
+    if (contentId && hasBought(contentId)) { console.log('[MetaPixel] ⏭ Lead skipped — already purchased', contentId); return; }
     safeFbq('track', 'Lead', {
+      ...(contentId ? { content_ids: [contentId], content_type: 'product' } : {}),
       content_name: name,
       content_category: 'Ministry Digital Pack',
       value: price,
@@ -98,8 +105,9 @@ export function useMetaPixel() {
    * When: verified payment confirmed, product delivered
    * Data: product name, price, currency, GCash ref number as transaction_id
    */
-  function trackPurchase({ name, price, currency, transactionId }: PixelProductParams) {
+  function trackPurchase({ name, price, currency, transactionId, contentId }: PixelProductParams) {
     safeFbq('track', 'Purchase', {
+      ...(contentId ? { content_ids: [contentId], content_type: 'product' } : {}),
       content_name: name,
       content_category: 'Ministry Digital Pack',
       value: price,

@@ -20,6 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 'use client';
+import { hasBought } from './buyerState';
 
 declare global {
   interface Window {
@@ -84,6 +85,8 @@ export function useTikTokPixel() {
    * Called from: checkout/page.tsx and ProductPageTemplate useEffect
    */
   function trackViewContent({ name, price, currency, contentId }: TikTokProductParams) {
+    // v5: don't re-target people who already bought this product
+    if (contentId && hasBought(contentId)) { console.log('[TikTokPixel] ⏭ ViewContent skipped — already purchased', contentId); return; }
     safeTtq('ViewContent', {
       content_name: name,
       content_id: contentId || name.toLowerCase().replace(/\s+/g, '-'),
