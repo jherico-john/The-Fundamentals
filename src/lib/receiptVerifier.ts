@@ -1,398 +1,269 @@
-// src/lib/receiptVerifier.ts — v4.1 (PRODUCTION FIX)
+// src/lib/receiptVerifier.ts — v5
 // ─────────────────────────────────────────────────────────────────────────────
-// ROOT CAUSE ANALYSIS — why OCR failed locally and 504'd on Vercel:
+// Multi-channel receipt verification (GCash primary + Maya / InstaPay / Security
+// Bank / MariBank / BPI / GoTyme / BDO / UnionBank, standalone or bridged to
+// GCash through InstaPay).
 //
-// BUG 1 (PRIMARY — caused 504 on Vercel + local fail):
-//   Tesseract.js 5.x downloads the `eng.traineddata` language model from the
-//   jsDelivr CDN at RUNTIME (on first createWorker call). On Vercel, this CDN
-//   request hangs → function times out after 60s → 504 Gateway Timeout.
-//   Locally it fails silently or 403s in restricted network environments.
-//
-//   FIX: Install `@tesseract.js-data/eng` as a real npm dependency and pass
-//   its local path as `langPath` to createWorker. This completely eliminates
-//   any CDN dependency. The traineddata is bundled into node_modules and read
-//   directly from disk — zero network calls, works on Vercel cold starts.
-//
-// BUG 2 (secondary — workerPath MODULE_NOT_FOUND):
-//   When webpack bundles the API route into .next/server/chunks/, __dirname
-//   inside tesseract's defaultOptions becomes .next/server/chunks/ instead of
-//   the real node_modules path → worker script not found.
-//
-//   FIX: Resolve workerPath from require.resolve() before webpack ever runs,
-//   so tesseract.js receives an absolute on-disk path, not a relative one.
-//
-// BUG 3 (parser — ₱ misread as £):
-//   Tesseract OCR frequently misreads the peso sign ₱ as £. Amount parser
-//   now accepts both characters.
-//
-// BUG 4 (parser — date on same line as ref number):
-//   GCash receipt format: "Ref No. 9042 996 774496  Jul17,2026 7:22 PM"
-//   The date immediately follows the ref number with no newline. Previous date
-//   regex required spaces that GCash doesn't always include (Jul17 not Jul 17).
-//
-// BUG 5 (preprocessing — contrast 0.35 hurt OCR accuracy):
-//   GCash receipts are already high-contrast white-on-dark-blue design.
-//   Aggressive contrast boost clips midtones and degrades OCR accuracy.
-//   Fix: greyscale + normalize only, no additional contrast manipulation.
+// PIPELINE (each step has its own, channel-aware error — see receiptErrors.ts)
+//   1  anti-editing   editor fingerprints (Photoshop/Canva/…) + SHA-256 image hash
+//   2  decode         sharp (JPG/PNG/WEBP)
+//   3  OCR            multi-pass, model escalation (ocrEngine.ts)
+//   4  parse          price · account type/number/name · fee · reference id ·
+//                     InstaPay ref no  (receiptParser.ts) — all other text ignored
+//   5  channel/route  direct GCash · bridge via InstaPay · standalone
+//   6  recipient      receipt must show OUR account (PAYMENT_DEST_TOKENS)
+//   7  stability      amount + fee = total, repeated amounts agree, no future date
+//   8  amount         backend price-threshold window (priceThreshold.ts)
+//   9  freshness      receipt age ≤ RECEIPT_MAX_AGE_DAYS
+//  10  anti-replay    EVERY reference on the receipt is checked + unique-constraint claim
 // ─────────────────────────────────────────────────────────────────────────────
-
-import Jimp from 'jimp';
-import QrCode from 'qrcode-reader';
-import { createWorker, type Worker } from 'tesseract.js';
-import path from 'path';
 import crypto from 'crypto';
-import { isRefUsed, isHashUsed, markReceiptUsed, recordPurchase } from '@/lib/supabase';
+import { findUsedKey, isHashUsed, recordVerifiedReceipt, type Attribution } from '@/lib/supabase';
+import { readReceipt, inspectImage, detectEditorSignature } from '@/lib/ocrEngine';
+import { judgeAmount, getPriceWindow } from '@/lib/priceThreshold';
+import {
+  getEnabledChannels, isChannelEnabled, matchDestination, getDestTokens, getDestMode,
+  getStandaloneTokens, type ChannelId, type Route,
+} from '@/lib/paymentChannels';
+import { buildError, type ReceiptError } from '@/lib/receiptErrors';
+import type { ParsedReceipt } from '@/lib/receiptParser';
 
-export interface VerifyResult {
-  valid: boolean;
-  reason?: string;
-  data?: {
-    referenceNumber: string;
-    amount: number;
-    dateStr: string;
-    mobileNumber?: string;
-    imageHash: string;
-  };
-  warnings?: string[];
+export interface VerifyOptions {
+  productSlug: string;
+  productName: string;
+  /** CATALOG price (what the UI shows). The threshold is applied internally. */
+  expectedAmount: number;
+  testMode: boolean;
+  priceTolerance: number;
+  maxAgeDays?: number;
+  now?: Date;
+  affiliateCode?: string | null;
+  customerId?: string | null;
+  isNewCustomer?: boolean;
+  attribution?: Attribution | null;
+  /** false → verify only, never write to the database (used by tests) */
+  persist?: boolean;
+  supportEmail?: string;
 }
 
-// ── Image hash for anti-editing ───────────────────────────────────────────────
+export interface VerifiedData {
+  referenceNumber: string;
+  amount: number;
+  dateStr: string;
+  mobileNumber?: string;
+  imageHash: string;
+  channel: ChannelId;
+  channelLabel: string;
+  route: Route;
+  transferFee: number | null;
+  instapayRefNo: string | null;
+}
+
+export type VerifyResult =
+  | { valid: true; data: VerifiedData; warnings: string[] }
+  | { valid: false; error: ReceiptError; warnings: string[]; /** legacy flat text */ reason: string };
+
 export function hashImage(buf: Buffer): string {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
 
-// ── Resolve tesseract paths at module load time (before any webpack bundling) ─
-// These are computed once when the module is first required and cached.
-// require.resolve() finds the real on-disk node_modules path, not .next/.
+// STRICT_DB=true → if Supabase is unreachable, refuse (fail CLOSED) instead of
+// letting a possible replay through. Default keeps v4 behaviour (fail open) so a
+// database blip never strands a customer who has really paid.
+const STRICT_DB = process.env.STRICT_DB === 'true';
 
-function resolveWorkerPath(): string | undefined {
-  try {
-    const pkg = require.resolve('tesseract.js/package.json');
-    const p = path.join(path.dirname(pkg), 'src', 'worker-script', 'node', 'index.js');
-    // Verify it actually exists before passing it
-    require('fs').accessSync(p);
-    return p;
-  } catch {
-    // If resolution fails, return undefined and let tesseract use its default.
-    // This should never happen in practice when the package is installed.
-    console.warn('[receiptVerifier] Could not resolve tesseract workerPath — using default');
-    return undefined;
-  }
+const fail = (error: ReceiptError, warnings: string[]): VerifyResult =>
+  ({ valid: false, error, warnings, reason: `${error.title}. ${error.message}` });
+
+// ── anti-replay keys ─────────────────────────────────────────────────────────
+// STRONG refs (≥10 chars: GCash Ref No., BPI confirmation, BN-…, ITO…, UD…, MBADD…)
+// are keyed per channel. WEAK refs (6-digit InstaPay refs / trace IDs) are
+// keyed with channel + amount so two banks that happen to emit the same
+// 6 digits can never block each other.
+export function buildReplayKeys(p: ParsedReceipt, channel: ChannelId, amountForKey: number) {
+  const amt = Math.round(amountForKey * 100);
+  const mk = (value: string, strong: boolean) =>
+    strong ? (channel === 'gcash' ? value : `${channel}:${value}`) : `weak:${channel}:${amt}:${value}`;
+  const refs = new Map<string, boolean>();
+  for (const r of p.allRefs) refs.set(r.value, r.strong);
+  if (p.referenceId && !refs.has(p.referenceId)) refs.set(p.referenceId, p.referenceId.length >= 10);
+  const keys = Array.from(refs.entries()).map(([v, strong]) => mk(v, strong));
+  const primary = p.referenceId ? mk(p.referenceId, p.referenceId.length >= 10) : keys[0];
+  return { keys: Array.from(new Set(keys)), primary };
 }
 
-function resolveLangPath(): string | undefined {
-  try {
-    // FIX (BUG 1): Use locally installed @tesseract.js-data/eng instead of CDN.
-    // This package must be listed in package.json dependencies.
-    const pkg = require.resolve('@tesseract.js-data/eng/package.json');
-    // 4.0.0_best_int is the "best integer" model — good balance of accuracy + speed
-    const p = path.join(path.dirname(pkg), '4.0.0_best_int');
-    require('fs').accessSync(path.join(p, 'eng.traineddata.gz'));
-    return p;
-  } catch {
-    // If local data package is not installed, fall back to CDN (development only).
-    // Production MUST have @tesseract.js-data/eng installed.
-    console.warn('[receiptVerifier] @tesseract.js-data/eng not found — falling back to CDN (install it for production!)');
-    return undefined;
-  }
-}
-
-const WORKER_PATH = resolveWorkerPath();
-const LANG_PATH   = resolveLangPath();
-
-// ── Singleton Tesseract worker ────────────────────────────────────────────────
-// One worker per serverless instance lifetime. Eliminates repeated cold-start
-// costs and avoids any re-initialization of the traineddata load.
-//
-// On Vercel: each cold start pays the ~1-2s init cost once, then all subsequent
-// requests on the same instance (~1s each) skip initialization entirely.
-
-let _workerPromise: Promise<Worker> | null = null;
-
-function getWorker(): Promise<Worker> {
-  if (!_workerPromise) {
-    _workerPromise = createWorker('eng', 1, {
-      logger: () => {},           // silence progress logs in production
-      ...(WORKER_PATH ? { workerPath: WORKER_PATH } : {}),
-      ...(LANG_PATH   ? { langPath:   LANG_PATH   } : {}),
-    }).catch((err) => {
-      // If worker init fails, clear the singleton so the next request retries.
-      _workerPromise = null;
-      throw err;
-    });
-  }
-  return _workerPromise;
-}
-
-// ── QR code scan ──────────────────────────────────────────────────────────────
-async function scanQR(buf: Buffer): Promise<string | null> {
-  return new Promise(resolve => {
-    Jimp.read(buf)
-      .then(img => {
-        const qr = new QrCode();
-        qr.callback = (e: Error | null, v: { result: string } | null) =>
-          resolve(e || !v?.result ? null : v.result);
-        qr.decode(img.bitmap);
-      })
-      .catch(() => resolve(null));
-  });
-}
-
-// ── OCR text extraction ───────────────────────────────────────────────────────
-async function ocrImage(buf: Buffer): Promise<string> {
-  // FIX (BUG 5): Minimal preprocessing for GCash receipts.
-  // GCash uses a clean white card design — text is already dark on white.
-  // .normalize() corrects any brightness/exposure issues from the screenshot.
-  // We deliberately skip .contrast() — boosting contrast on already-sharp text
-  // clips midtones and makes OCR WORSE, not better.
-  const img = await Jimp.read(buf);
-  img.greyscale().normalize();
-  const png = await img.getBufferAsync(Jimp.MIME_PNG);
-
-  const worker = await getWorker();
-  const { data } = await worker.recognize(png);
-  return data.text;
-}
-
-// ── Field parsers (tuned to actual GCash OCR output) ─────────────────────────
-
-function parseRef(t: string): string | null {
-  const pats = [
-    // Primary: "Ref No." followed by digits — stops before the date (Jul...)
-    /Ref\.?\s*No\.?\s*[:\s]+([0-9][\d\s]{8,}?)(?=\s{2,}|\s*[A-Z][a-z]{2,}|\n|$)/im,
-    /Reference\s*(?:No\.?|Number)?\s*[:\s]+([0-9][\d\s]{8,}?)(?=\s{2,}|\s*[A-Z][a-z]{2,}|\n|$)/im,
-    // Exact GCash format: 4 digits · 3 digits · 6 digits
-    /\b([0-9]{4}\s[0-9]{3}\s[0-9]{6})\b/,
-    // Fallback: 13–16 consecutive digits
-    /\b([0-9]{13,16})\b/,
-  ];
-  for (const p of pats) {
-    const m = t.match(p);
-    if (m) return m[1].replace(/\s+/g, '').trim();
-  }
-  return null;
-}
-
-function parseAmount(t: string): number | null {
-  const pats = [
-    // FIX (BUG 3): Accept £ as OCR misread of ₱ peso sign
-    /Total\s+Amount\s+Sent\s+[₱P£$]?\s*([\d,]+\.?\d*)/i,
-    /Amount\s+Sent\s+[₱P£$]?\s*([\d,]+\.?\d*)/i,
-    // Peso/pound sign immediately before number
-    /[₱£]\s*([\d,]+\.\d{2})/,
-    // Amount on its own row
-    /^Amount\s+([\d,]+\.\d{2})\s*$/im,
-  ];
-  for (const p of pats) {
-    const m = t.match(p);
-    if (m) {
-      const n = parseFloat(m[1].replace(/,/g, ''));
-      if (!isNaN(n) && n > 0) return n;
-    }
-  }
-  return null;
-}
-
-function parseDate(t: string): string | null {
-  // FIX (BUG 4): Handle GCash compressed date format like "Jul17,2026" (no space)
-  // Also handles "Jul 17, 2026", "Jul 24,2026" etc.
-  const pats = [
-    // With time: "Jul17,2026 7:22 PM" or "Jul 24,2026 7:03 AM"
-    /([A-Za-z]{3}\s*\d{1,2},?\s*\d{4}\s+\d{1,2}:\d{2}\s*(?:AM|PM)?)/i,
-    // Without time: "Jul 17, 2026" or "Jul17,2026"
-    /([A-Za-z]{3}\s*\d{1,2},?\s*\d{4})/i,
-  ];
-  for (const p of pats) {
-    const m = t.match(p);
-    if (m) return m[1].trim();
-  }
-  return null;
-}
-
-function parseMobile(t: string): string | null {
-  const m = t.match(/(\+63\s?[\d\s]{10,14}|09\d{2}[\s\-]?\d{3}[\s\-]?\d{4})/);
-  return m ? m[1].replace(/\s/g, '') : null;
-}
-
-function isGCashQR(p: string): boolean {
-  return p.startsWith('000201') || p.includes('gcash.com') || (p.includes('PH') && p.length > 20);
-}
-
-// ── Main verification ─────────────────────────────────────────────────────────
-export async function verifyGCashReceipt(
-  buf: Buffer,
-  opts: {
-    expectedAmount: number;
-    testMode: boolean;
-    priceTolerance: number;
-    maxAgeDays?: number;
-    affiliateCode?: string | null;
-    customerId?: string | null;
-    productName?: string;
-  }
-): Promise<VerifyResult> {
+// ── main entry ───────────────────────────────────────────────────────────────
+export async function verifyReceipt(buf: Buffer, opts: VerifyOptions): Promise<VerifyResult> {
   const {
-    expectedAmount, testMode, priceTolerance, maxAgeDays = 3,
-    affiliateCode, customerId, productName = 'Ministry Product',
+    expectedAmount, testMode, priceTolerance, maxAgeDays = 3, productSlug, productName,
+    affiliateCode, customerId, now = new Date(), persist = true, supportEmail,
   } = opts;
   const warnings: string[] = [];
   const imageHash = hashImage(buf);
+  const ctx = { expected: expectedAmount, productName, maxAgeDays, supportEmail };
 
-  // ── Anti-editing: reject tampered/reused image hash ────────────────────────
+  // 1 ── anti-editing: tool fingerprints + duplicate image ─────────────────────
   if (!testMode) {
+    const sig = detectEditorSignature(buf);
+    if (sig) return fail(buildError('EDITED_IMAGE', ctx), warnings);
     try {
-      if (await isHashUsed(imageHash)) {
-        return {
-          valid: false,
-          reason: 'This image has already been submitted. Do not edit or re-screenshot your receipt — upload the original file saved from the GCash app.',
-        };
-      }
+      if (await isHashUsed(imageHash)) return fail(buildError('DUPLICATE_IMAGE', ctx), warnings);
     } catch {
-      // Supabase temporarily unavailable — continue with verification
-      warnings.push('Anti-duplicate check temporarily unavailable (Supabase)');
+      if (STRICT_DB) return fail(buildError('SERVER_ERROR', ctx), warnings);
+      warnings.push('Anti-duplicate image check temporarily unavailable');
     }
   }
 
-  // ── QR code scan ───────────────────────────────────────────────────────────
-  // Best-effort only. GCash receipts DO contain a QR but it's not critical.
-  // We don't fail hard on QR scan error — OCR is the authoritative check.
-  let qrPayload: string | null = null;
-  try {
-    qrPayload = await scanQR(buf);
-  } catch {
-    warnings.push('QR scan skipped — using OCR verification only');
-  }
+  // 2 ── decode ────────────────────────────────────────────────────────────────
+  try { await inspectImage(buf); }
+  catch { return fail(buildError('UNREADABLE_IMAGE', ctx), warnings); }
 
-  if (!qrPayload || !isGCashQR(qrPayload)) {
-    // Non-fatal in all modes — log it but never reject based on QR alone
-    warnings.push('No GCash QR code detected in image — continuing with OCR verification');
-  }
-
-  // ── OCR ────────────────────────────────────────────────────────────────────
-  let rawText = '';
-  try {
-    rawText = await ocrImage(buf);
-  } catch (err) {
+  // 3 ── OCR ───────────────────────────────────────────────────────────────────
+  let ocr;
+  try { ocr = await readReceipt(buf); }
+  catch (err) {
     console.error('[receiptVerifier] OCR failed:', err);
-    return {
-      valid: false,
-      reason: 'Could not read text from the uploaded image. Please upload a clear, unedited screenshot saved directly from the GCash app.',
-    };
+    return fail(buildError('OCR_FAILED', ctx), warnings);
+  }
+  const p = ocr.parsed;
+  const combinedText = ocr.allTexts.join('\n');
+  if (combinedText.replace(/\s/g, '').length < 15) return fail(buildError('OCR_FAILED', ctx), warnings);
+
+  // 4/5 ── channel + route ──────────────────────────────────────────────────────
+  const destMode = getDestMode();
+  const destTokens = getDestTokens();
+  const dest = matchDestination(combinedText, destTokens);
+
+  let channel: ChannelId | 'unknown' = p.channel;
+  if (channel === 'unknown') {
+    // Unlisted bank: accept as generic InstaPay ONLY if it clearly paid our account.
+    if ((p.mentionsInstaPay || dest.matched) && (p.referenceId || p.amount !== null || p.headerAmount !== null || p.total !== null)) {
+      channel = 'instapay';
+      warnings.push('Payment app not recognised — treated as a generic InstaPay transfer');
+    } else if (p.completeness < 40) {
+      return fail(buildError('NOT_A_RECEIPT', { ...ctx, channel }), warnings);
+    } else {
+      return fail(buildError('NOT_A_RECEIPT', { ...ctx, channel }), warnings);
+    }
+  }
+  const ch = channel as ChannelId;
+  const ectx = { ...ctx, channel: ch, amount: p.amount ?? p.total ?? p.headerAmount ?? undefined, fee: p.fee ?? undefined, reference: p.referenceId ?? undefined };
+
+  if (!isChannelEnabled(ch) && !getEnabledChannels().some(c => c.id === ch)) {
+    return fail(buildError('CHANNEL_NOT_ACCEPTED', ectx), warnings);
   }
 
-  // Loose check — only two keywords needed (both always present on GCash receipts)
-  const looksLikeReceipt =
-    /ref\.?\s*no/i.test(rawText) ||
-    /total amount sent/i.test(rawText) ||
-    /gcash/i.test(rawText) ||
-    /sent via/i.test(rawText);
+  let route: Route = p.route;
+  if (ch === 'gcash') route = 'direct_gcash';
+  else if (p.mentionsGcashDestination || dest.matched) route = 'bridge_instapay_gcash';
+  else route = 'standalone';
 
-  if (!looksLikeReceipt && !testMode) {
-    return {
-      valid: false,
-      reason: 'This does not look like a GCash receipt. Please upload the payment receipt screenshot saved from the GCash app.',
-    };
+  if (route === 'standalone' && !testMode) {
+    const toks = getStandaloneTokens(ch);
+    const ok = toks.length > 0 && matchDestination(combinedText, toks).matched;
+    if (!ok) return fail(buildError('STANDALONE_NOT_ACCEPTED', ectx), warnings);
   }
 
-  // ── Extract fields ──────────────────────────────────────────────────────────
-  const refNumber    = parseRef(rawText);
-  const amount       = parseAmount(rawText);
-  const dateStr      = parseDate(rawText);
-  const mobileNumber = parseMobile(rawText);
-
-  // Log for debugging (visible in Vercel function logs)
-  console.log('[receiptVerifier] OCR extracted:', {
-    refNumber, amount, dateStr, mobileNumber: mobileNumber ? '***masked***' : null,
-    textLength: rawText.length, testMode,
-  });
-
-  // ── Ref number anti-replay ─────────────────────────────────────────────────
-  if (!refNumber && !testMode) {
-    return {
-      valid: false,
-      reason: 'Cannot find the reference number on the receipt. Make sure the receipt is not cropped and the Ref No. row is fully visible.',
-    };
-  }
-
-  if (refNumber) {
-    try {
-      if (await isRefUsed(refNumber)) {
-        return {
-          valid: false,
-          reason: `Reference No. ${refNumber} has already been used to unlock a download. Each payment receipt can only be used once.`,
-        };
-      }
-    } catch {
-      warnings.push('Anti-replay check temporarily unavailable (Supabase)');
+  // 6 ── recipient must be OUR account ────────────────────────────────────────
+  if (route !== 'standalone') {
+    if (destMode === 'strict' && destTokens.length && !dest.matched) {
+      if (!testMode) return fail(buildError('WRONG_RECIPIENT', ectx), warnings);
+      warnings.push('TEST MODE: recipient check skipped');
+    } else if (destMode === 'warn' && !dest.matched) {
+      warnings.push('Recipient could not be confirmed (set PAYMENT_DEST_TOKENS to enforce)');
     }
   }
 
-  // ── Amount check ───────────────────────────────────────────────────────────
+  // reference ───────────────────────────────────────────────────────────────
+  if (!p.referenceId && !testMode) return fail(buildError('MISSING_REFERENCE', ectx), warnings);
+
+  // 7 ── stability / consistency ("unstable text ⇒ rejected") ────────────────
+  const eq = (a: number, b: number) => Math.abs(a - b) < 0.011;
   if (!testMode) {
-    if (amount === null) {
-      return {
-        valid: false,
-        reason: 'Cannot read the payment amount from the receipt. Please upload a clearer screenshot with the full receipt visible.',
-      };
-    }
-    if (Math.abs(amount - expectedAmount) > priceTolerance) {
-      return {
-        valid: false,
-        reason: `Payment amount ₱${amount.toFixed(2)} does not match the required amount ₱${expectedAmount.toFixed(2)}. Please pay the exact amount shown on this page.`,
-      };
+    if (p.amount !== null && p.total !== null && p.fee !== null && !eq(p.amount + p.fee, p.total) && !eq(p.amount, p.total))
+      return fail(buildError('UNSTABLE_TEXT', ectx), warnings);
+    if (new Set(p.amountMentions.map(v => v.toFixed(2))).size > 1)
+      return fail(buildError('UNSTABLE_TEXT', ectx), warnings);
+    if (p.headerAmount !== null && p.amount !== null && !eq(p.headerAmount, p.amount) && !(p.total !== null && eq(p.headerAmount, p.total)))
+      return fail(buildError('UNSTABLE_TEXT', ectx), warnings);
+  }
+
+  // 8 ── amount, using the backend price window ────────────────────────────────
+  // Figure checked = what reached us ("Amount"/"Transfer amount") when the
+  // receipt states it explicitly, else the total debited / header amount.
+  const paid: number | null = p.amount ?? p.total ?? p.headerAmount;
+  if (paid === null) {
+    if (!testMode) return fail(buildError('MISSING_AMOUNT', ectx), warnings);
+    warnings.push('TEST MODE: amount not found in receipt — skipped');
+  } else if (!testMode) {
+    const verdict = judgeAmount(paid, expectedAmount, priceTolerance);
+    if (verdict === 'short') return fail(buildError('AMOUNT_SHORT', { ...ectx, amount: paid }), warnings);
+    if (verdict === 'over') return fail(buildError('AMOUNT_OVER', { ...ectx, amount: paid }), warnings);
+    const w = getPriceWindow(expectedAmount, priceTolerance);
+    if (paid > expectedAmount + priceTolerance) warnings.push(`Accepted with bridge/transfer fee allowance (window ${w.min}–${w.max})`);
+  } else {
+    warnings.push(`TEST MODE: amount check skipped — found ₱${paid.toFixed(2)}, expected ₱${expectedAmount.toFixed(2)}`);
+  }
+
+  // 9 ── freshness ────────────────────────────────────────────────────────────
+  if (p.date) {
+    const ageDays = (now.getTime() - p.date.getTime()) / 864e5;
+    if (!testMode) {
+      if (ageDays < -1.5) return fail(buildError('RECEIPT_FUTURE_DATE', ectx), warnings);
+      if (ageDays > maxAgeDays) return fail(buildError('RECEIPT_TOO_OLD', { ...ectx, ageDays }), warnings);
     }
   } else {
-    if (amount !== null) {
-      warnings.push(`TEST MODE: Amount check skipped — found ₱${amount.toFixed(2)}, expected ₱${expectedAmount.toFixed(2)}`);
-    } else {
-      warnings.push('TEST MODE: Amount not found in receipt — skipped');
-    }
+    warnings.push('No date visible on this receipt — freshness check skipped (single-use reference still enforced)');
   }
 
-  // ── Date freshness check ───────────────────────────────────────────────────
-  if (!testMode && dateStr) {
+  // 10 ── anti-replay ─────────────────────────────────────────────────────────
+  const { keys, primary } = buildReplayKeys(p, ch, paid ?? 0);
+  if (primary) {
     try {
-      // Normalize compressed GCash date "Jul17,2026" → "Jul 17,2026" for Date parsing
-      const normalized = dateStr.replace(/([A-Za-z]{3})(\d)/, '$1 $2').replace(/,(\d{4})/, ', $1');
-      const d = new Date(normalized);
-      if (!isNaN(d.getTime())) {
-        const ageDays = (Date.now() - d.getTime()) / 86400000;
-        if (ageDays > maxAgeDays) {
-          return {
-            valid: false,
-            reason: `This receipt is ${Math.floor(ageDays)} days old. Please use a receipt from within the last ${maxAgeDays} days.`,
-          };
-        }
-      }
+      const used = await findUsedKey(keys);
+      if (used) return fail(buildError('DUPLICATE_REFERENCE', { ...ectx, reference: p.referenceId || used }), warnings);
     } catch {
-      warnings.push('Could not parse receipt date — date check skipped');
+      if (STRICT_DB && !testMode) return fail(buildError('SERVER_ERROR', ctx), warnings);
+      warnings.push('Anti-replay check temporarily unavailable');
+    }
+
+    if (persist) {
+      try {
+        const res = await recordVerifiedReceipt({
+          referenceKey: primary, keys, imageHash,
+          receiptDate: p.dateStr, paymentChannel: ch, route, productSlug, productName,
+          expectedAmount, paidAmount: paid, transferFee: p.fee, totalAmount: p.total ?? p.headerAmount,
+          accountType: p.accountType, accountNumber: p.accountNumber, accountName: p.accountName,
+          referenceId: p.referenceId, instapayRefNo: p.instapayRefNo, ocrConfidence: p.completeness,
+          affiliateCode, customerId, isNewCustomer: opts.isNewCustomer, attribution: opts.attribution,
+        });
+        if (!res.ok) return fail(buildError('DUPLICATE_REFERENCE', { ...ectx, reference: p.referenceId || primary }), warnings);
+      } catch (err) {
+        // The customer has paid and the receipt is valid; don't strand them if the DB blips.
+        console.warn('[receiptVerifier] Supabase write error (non-fatal):', err);
+        warnings.push('Purchase record could not be saved to the database (non-fatal)');
+      }
     }
   }
 
-  // ── Persist to Supabase ────────────────────────────────────────────────────
-  // Write after ALL validation passes. Non-fatal on error (Supabase can be
-  // briefly unavailable without breaking the payment flow).
-  if (refNumber) {
-    try {
-      await markReceiptUsed(refNumber, imageHash, amount ?? 0, dateStr ?? '');
-      await recordPurchase(refNumber, amount ?? 0, productName, affiliateCode, customerId);
-    } catch (err) {
-      // Non-fatal: the customer already paid and their receipt is valid.
-      // The Supabase write will fail silently and the download still proceeds.
-      console.warn('[receiptVerifier] Supabase write error (non-fatal):', err);
-      warnings.push('Purchase record could not be saved to database (non-fatal)');
-    }
-  }
+  console.log('[receiptVerifier] ✓', {
+    channel: ch, route, paid, fee: p.fee, expected: expectedAmount, passes: ocr.passes.join(','), completeness: p.completeness,
+  });
 
+  const info = getEnabledChannels().find(c => c.id === ch);
   return {
     valid: true,
     data: {
-      referenceNumber: refNumber || 'N/A',
-      amount: amount ?? 0,
-      dateStr: dateStr || 'N/A',
-      mobileNumber: mobileNumber || undefined,
-      imageHash,
+      referenceNumber: p.referenceId || 'N/A',
+      amount: paid ?? 0,
+      dateStr: p.dateStr || 'N/A',
+      mobileNumber: p.mobileNumber || undefined,
+      imageHash, channel: ch, channelLabel: info?.label || ch, route,
+      transferFee: p.fee, instapayRefNo: p.instapayRefNo,
     },
     warnings: warnings.filter(Boolean),
   };
 }
+
+/** Backward-compatible name used by v4 callers. */
+export const verifyGCashReceipt = verifyReceipt;
