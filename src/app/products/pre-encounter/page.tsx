@@ -1,4 +1,5 @@
 import ProductPageTemplate from '@/components/ProductPageTemplate';
+import { getProductBySlug, getDownloadPageUrl } from '@/lib/products';
 
 export default function Page() {
   return (
@@ -10,7 +11,7 @@ export default function Page() {
         tagline: 'Prepare hearts and minds before the transformative Encounter experience.',
         description:
           'The Pre-Encounter pack equips facilitators with 7 ready-to-teach sessions that build anticipation, lay doctrinal groundwork, and prepare participants spiritually and emotionally for a life-changing Encounter weekend.',
-        price: parseInt(process.env.NEXT_PUBLIC_PRODUCT_PRE_ENCOUNTER_PRICE || '297'),
+        price: getProductBySlug('pre-encounter')!.price,
         originalPrice: 1900,
         lessons: 7,
         features: [
@@ -37,9 +38,7 @@ export default function Page() {
             text: 'Worth every peso. Saved me weeks of preparation and our group has never been more spiritually unified going into an Encounter.',
           },
         ],
-        downloadPageUrl:
-          process.env.NEXT_PUBLIC_DOWNLOAD_PAGE_URL_PRE_ENCOUNTER ||
-          'https://jhericojohnbalasa.systeme.io/thankyou-page-preencounter',
+        downloadPageUrl: getDownloadPageUrl('pre-encounter'),
         affiliateProductLink:
           process.env.NEXT_PUBLIC_AFFILIATE_LINK_PRE_ENCOUNTER ||
           'https://jhericojohnbalasa.systeme.io/pre-encounter-truth',

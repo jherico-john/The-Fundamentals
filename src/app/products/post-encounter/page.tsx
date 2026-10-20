@@ -1,4 +1,5 @@
 import ProductPageTemplate from '@/components/ProductPageTemplate';
+import { getProductBySlug, getDownloadPageUrl } from '@/lib/products';
 
 export default function Page() {
   return (
@@ -10,7 +11,7 @@ export default function Page() {
         tagline: 'Sustain and deepen the transformation that began at the Encounter.',
         description:
           'The Post-Encounter pack helps facilitators walk newly transformed believers through the critical weeks after their Encounter — building habits of prayer, Word, community, and service that make their transformation last a lifetime.',
-        price: parseInt(process.env.NEXT_PUBLIC_PRODUCT_POST_ENCOUNTER_PRICE || '397'),
+        price: getProductBySlug('post-encounter')!.price,
         originalPrice: 797,
         lessons: 8,
         features: [
@@ -37,9 +38,7 @@ export default function Page() {
             text: 'Our retention went up dramatically once we started using these Post-Encounter materials. Highly recommended.',
           },
         ],
-        downloadPageUrl:
-          process.env.NEXT_PUBLIC_DOWNLOAD_PAGE_URL_POST_ENCOUNTER ||
-          'https://jhericojohnbalasa.systeme.io/post-encounter-truth',
+        downloadPageUrl: getDownloadPageUrl('post-encounter'),
         affiliateProductLink:
           process.env.NEXT_PUBLIC_AFFILIATE_LINK_POST_ENCOUNTER ||
           'https://jhericojohnbalasa.systeme.io/post-encounter-truth',

@@ -1,4 +1,5 @@
 import ProductPageTemplate from '@/components/ProductPageTemplate';
+import { getProductBySlug, getDownloadPageUrl } from '@/lib/products';
 
 export default function Page() {
   return (
@@ -10,7 +11,7 @@ export default function Page() {
         tagline: 'A transformative weekend experience that brings people face to face with God.',
         description:
           'The Encounter pack provides everything a facilitator needs to lead a powerful, life-changing Encounter weekend — complete PPT sessions, structured talks, worship guides, and ministry flow materials.',
-        price: parseInt(process.env.NEXT_PUBLIC_PRODUCT_ENCOUNTER_PRICE || '997'),
+        price: getProductBySlug('encounter')!.price,
         originalPrice: 5300,
         lessons: 19,
         features: [
@@ -37,9 +38,7 @@ export default function Page() {
             text: 'This saved us months of preparation. Everything from Friday night to Sunday wrap-up is covered.',
           },
         ],
-        downloadPageUrl:
-          process.env.NEXT_PUBLIC_DOWNLOAD_PAGE_URL_ENCOUNTER ||
-          'https://jhericojohnbalasa.systeme.io/thankyou-page-encounter',
+        downloadPageUrl: getDownloadPageUrl('encounter'),
         affiliateProductLink:
           process.env.NEXT_PUBLIC_AFFILIATE_LINK_ENCOUNTER ||
           'https://jhericojohnbalasa.systeme.io/encounter-truth',

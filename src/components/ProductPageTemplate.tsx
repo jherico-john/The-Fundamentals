@@ -1,21 +1,27 @@
 'use client';
-// ProductPageTemplate — v4 final
-// Shared template for all non-Fundamentals product pages.
-// AffiliateSidebar automatically shows cards for every OTHER product.
+// ProductPageTemplate — v5
+// Shared template for all non-Fundamentals product pages (Lifegroup, Pre-Encounter,
+// Encounter, Post-Encounter, SOL, All-in-One Bundle).
+// v5: hybrid payment copy, Meta + TikTok + Google Ads on every page, bundle
+// "what's included" + limited-time countdown, footer with the page name.
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { CheckCircle2, Zap, Star, Lock, BookOpen, Play, Shield } from 'lucide-react';
 import NavBar from '@/components/NavBar';
 import ReceiptUploader from '@/components/ReceiptUploader';
 import PaymentTutorial from '@/components/PaymentTutorial';
+import BridgePaymentGuide from '@/components/BridgePaymentGuide';
 // - [Not available] import AffiliateSidebar from '@/components/AffiliateSidebar';
 import SupportSection from '@/components/SupportSection';
+import SiteFooter from '@/components/SiteFooter';
+import { useGoogleAds } from '@/lib/useGoogleAds';
+import { PRODUCTS, BUNDLE_OFFER_ENDS, getIndividualProducts, type ProductSlug } from '@/lib/products';
 import { useMetaPixel } from '@/lib/useMetaPixel';
 import { useTikTokPixel } from '@/lib/useTikTokPixel';
 
 export interface ProductConfig {
   /** Must match the env var suffix and products.ts slug */
-  slug: 'sunyl' | 'encounter' | 'pre-encounter' | 'post-encounter' | 'lifegroup';
+  slug: Exclude<ProductSlug, 'fundamentals'>;
   name: string;
   tagline: string;
   description: string;
@@ -34,14 +40,34 @@ const CUR = process.env.NEXT_PUBLIC_CURRENCY || 'PHP';
 export default function ProductPageTemplate({ config }: { config: ProductConfig }) {
   const pixel  = useMetaPixel();
   const tiktok = useTikTokPixel();
+  const google = useGoogleAds();
+  const isBundle = config.slug === 'bundle';
+  const included = isBundle ? getIndividualProducts() : [];
+  const [left, setLeft] = useState<string>('');
+
+  // Limited-time countdown (bundle only, when NEXT_PUBLIC_BUNDLE_OFFER_ENDS is set)
+  useEffect(() => {
+    if (!isBundle || !BUNDLE_OFFER_ENDS) return;
+    const end = Date.parse(BUNDLE_OFFER_ENDS);
+    if (!Number.isFinite(end)) return;
+    const tick = () => {
+      const ms = end - Date.now();
+      if (ms <= 0) { setLeft('Offer ended'); return; }
+      const d = Math.floor(ms / 864e5), h = Math.floor(ms / 36e5) % 24, m = Math.floor(ms / 6e4) % 60;
+      setLeft(`${d}d ${h}h ${m}m left`);
+    };
+    tick(); const t = setInterval(tick, 30000); return () => clearInterval(t);
+  }, [isBundle]);
 
   // Fire Meta Lead + TikTok ViewContent when any product's checkout page loads.
   // config.name and config.price are dynamic — correct per product automatically.
   useEffect(() => {
     const safePrice = Number.isFinite(config.price) ? config.price : 0;
     const safeCurrency = CUR || 'PHP';
-    pixel.trackLead({ name: config.name, price: safePrice, currency: safeCurrency });
+    // Each helper skips automatically when this device already bought the product
+    pixel.trackLead({ name: config.name, price: safePrice, currency: safeCurrency, contentId: config.slug });
     tiktok.trackViewContent({ name: config.name, price: safePrice, currency: safeCurrency, contentId: config.slug });
+    google.trackViewContent({ slug: config.slug, name: config.name, price: safePrice, currency: safeCurrency });
   }, [config.slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -54,7 +80,7 @@ export default function ProductPageTemplate({ config }: { config: ProductConfig 
         <section className="text-center mb-14 fade-up">
           <div className="inline-flex items-center gap-2 bg-[var(--card)] border border-[var(--border)] rounded-full px-4 py-1.5 text-xs text-[var(--green)] font-medium mb-6 tracking-wider uppercase">
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--green)] animate-pulse inline-block" />
-            Pay via GCash · Instant Digital Access
+            Pay via GCash or any bank / e-wallet · Instant Access
           </div>
           <h1 className="text-5xl md:text-6xl font-bold mb-4"
             style={{ fontFamily: 'Bebas Neue, Impact, sans-serif', color: '#fff', lineHeight: 1.05 }}>
@@ -62,13 +88,29 @@ export default function ProductPageTemplate({ config }: { config: ProductConfig 
           </h1>
           <p className="text-lg text-gray-300 max-w-2xl mx-auto mb-2">{config.tagline}</p>
           <p className="text-sm text-gray-400 max-w-xl mx-auto">{config.description}</p>
+          {isBundle && (
+            <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-[var(--green)] bg-[var(--green-deeper)] bg-opacity-30 px-4 py-1.5 text-xs font-bold text-[var(--green)]" data-testid="bundle-offer">
+              🔥 LIMITED-TIME LAUNCH PRICE{left ? ` · ${left}` : ''}
+            </div>
+          )}
         </section>
 
         {/* Main grid: features left, price + payment right */}
         <div className="grid md:grid-cols-5 gap-8 mb-16">
 
           <div className="md:col-span-3 space-y-4 fade-up-1">
-            <h2 className="text-xl font-bold text-white mb-4">What's Inside</h2>
+            <h2 className="text-xl font-bold text-white mb-4">{isBundle ? 'Everything You Get' : "What's Inside"}</h2>
+            {isBundle && included.map(p => (
+              <div key={p.slug} className="glass-card p-4 flex items-center gap-4">
+                <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-[var(--green-deeper)] bg-opacity-40 flex items-center justify-center text-[var(--green)]"><BookOpen size={16} /></div>
+                <div className="flex-1">
+                  <p className="font-semibold text-white text-sm">{p.name}</p>
+                  <p className="text-gray-400 text-xs mt-0.5">{p.tagline}</p>
+                </div>
+                <span className="text-gray-500 line-through text-xs">{CUR} {p.price.toLocaleString()}</span>
+                <CheckCircle2 size={16} className="text-[var(--green)] flex-shrink-0" />
+              </div>
+            ))}
             {config.features.map((f, i) => (
               <div key={i} className="glass-card p-4 flex items-start gap-4 hover:border-[var(--green-dark)] transition-colors">
                 <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-[var(--green-deeper)] bg-opacity-40 flex items-center justify-center text-[var(--green)]">
@@ -124,7 +166,7 @@ export default function ProductPageTemplate({ config }: { config: ProductConfig 
               <h3 className="text-2xl font-bold text-white mb-1"
                 style={{ fontFamily: 'Bebas Neue, Impact, sans-serif' }}>{config.name}</h3>
               <p className="text-xs text-gray-400 mb-3">
-                Instant Digital Download · {config.lessons} Ready-to-Teach Sessions
+                {isBundle ? `Instant Digital Download · ${included.length} complete packs` : `Instant Digital Download · ${config.lessons} Ready-to-Teach Sessions`}
               </p>
 
               <div className="flex items-baseline gap-2 mb-4">
@@ -135,12 +177,12 @@ export default function ProductPageTemplate({ config }: { config: ProductConfig 
                   {CUR} {config.originalPrice.toLocaleString()}
                 </span>
                 <span className="bg-[var(--green-deeper)] text-[var(--green)] text-xs font-bold px-2 py-0.5 rounded-full">
-                  {Math.round((1 - config.price / config.originalPrice) * 100)}% OFF
+                  {Math.max(0, Math.round((1 - config.price / config.originalPrice) * 100))}% OFF
                 </span>
               </div>
 
               <div className="flex items-center justify-center gap-4 text-xs text-gray-500 pb-4 border-b border-[var(--border)] mb-4">
-                <span className="flex items-center gap-1"><Lock size={10} className="text-[var(--green)]" /> GCash Secure</span>
+                <span className="flex items-center gap-1"><Lock size={10} className="text-[var(--green)]" /> GCash &amp; Banks</span>
                 <span className="flex items-center gap-1"><Zap size={10} className="text-[var(--green)]" /> Instant Download</span>
                 <span className="flex items-center gap-1"><Shield size={10} className="text-[var(--green)]" /> No Gateway Fees</span>
               </div>
@@ -175,6 +217,7 @@ export default function ProductPageTemplate({ config }: { config: ProductConfig 
         </section>
 
         <PaymentTutorial />
+        <BridgePaymentGuide />
 
         {/* Affiliate sidebar — shows ALL products EXCEPT this one 
         <AffiliateSidebar
@@ -185,15 +228,7 @@ export default function ProductPageTemplate({ config }: { config: ProductConfig 
 
         <SupportSection />
 
-        <footer className="text-center text-xs text-gray-600 pb-8 mt-8">
-          <p>© {new Date().getFullYear()} The Fundamentals Ministry by Jherico Balasa.</p>
-          <p className="mt-1">
-            Need help?{' '}
-            <a href="mailto:jhericojohnbalasa@gmail.com" className="text-[var(--green)] hover:underline">
-              jhericojohnbalasa@gmail.com
-            </a>
-          </p>
-        </footer>
+        <SiteFooter pageName={config.name} />
       </div>
     </main>
   );

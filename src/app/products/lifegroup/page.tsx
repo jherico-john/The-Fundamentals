@@ -1,4 +1,5 @@
 import ProductPageTemplate from '@/components/ProductPageTemplate';
+import { getProductBySlug, getDownloadPageUrl } from '@/lib/products';
 
 export default function Page() {
   return (
@@ -10,7 +11,7 @@ export default function Page() {
         tagline: 'Everything a Life Group leader needs to build a thriving, Christ-centred community.',
         description:
           'The Lifegroup Fundamentals pack equips cell group and life group leaders with 12 structured sessions covering community, accountability, biblical study methods, and how to multiply groups — all presented with clear, professional slides.',
-        price: parseInt(process.env.NEXT_PUBLIC_PRODUCT_LIFEGROUP_PRICE || '397'),
+        price: getProductBySlug('lifegroup')!.price,
         originalPrice: 2400,
         lessons: 12,
         features: [
@@ -37,9 +38,7 @@ export default function Page() {
             text: 'We trained 20 new Lifegroup leaders using this pack. It standardised our training without making it feel mechanical.',
           },
         ],
-        downloadPageUrl:
-          process.env.NEXT_PUBLIC_DOWNLOAD_PAGE_URL_LIFEGROUP ||
-          'https://jhericojohnbalasa.systeme.io/thankyou-page-lifegroup',
+        downloadPageUrl: getDownloadPageUrl('lifegroup'),
         affiliateProductLink:
           process.env.NEXT_PUBLIC_AFFILIATE_LINK_LIFEGROUP ||
           'https://jhericojohnbalasa.systeme.io/lifegroup-truth',
