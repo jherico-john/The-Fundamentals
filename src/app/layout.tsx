@@ -4,10 +4,12 @@ import './globals.css';
 import AffiliateTracker from '@/components/AffiliateTracker';
 import MetaPixel from '@/components/MetaPixel';
 import TikTokPixel from '@/components/TikTokPixel';
+import GoogleTag from '@/components/GoogleTag';
+import AdAttributionTracker from '@/components/AdAttributionTracker';
 
 export const metadata: Metadata = {
-  title: 'Ministry Pack — The Fundamentals',
-  description: 'Pay via GCash and get instant access to The Fundamentals digital ministry pack.',
+  title: 'Jherico Balasa Ministry — Digital Ministry Packs',
+  description: 'Pay via GCash or any bank / e-wallet and get instant access to ready-to-teach digital ministry packs.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -23,6 +25,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <MetaPixel />
         {/* TikTok Pixel — base code + PageView on every page */}
         <TikTokPixel />
+        {/* Google tag (Google Ads AW-18516168856) — once per page, consent-mode aware */}
+        <GoogleTag />
+        {/* Ad attribution (gclid / fbclid / ttclid / UTM) → Google · Meta · TikTok outcomes */}
+        <Suspense fallback={null}><AdAttributionTracker /></Suspense>
         {/* Affiliate ref cookie tracker */}
         <Suspense fallback={null}><AffiliateTracker /></Suspense>
         {children}
