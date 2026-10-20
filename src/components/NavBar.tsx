@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { BookOpen, User, LogOut, ChevronDown, LayoutDashboard, LogIn } from 'lucide-react';
 import Link from 'next/link';
 
-interface NavUser { name: string; email: string; }
+interface NavUser { name: string; email: string; role: 'admin' | 'customer'; }
 
 export default function NavBar({ product = 'The Fundamentals' }: { product?: string }) {
   const [user, setUser] = useState<NavUser | null>(null);
@@ -15,9 +15,9 @@ export default function NavBar({ product = 'The Fundamentals' }: { product?: str
       // Admin: d = { authenticated, role:'admin', email }
       // Customer: d = { authenticated, role:'customer', customer:{ id, name, email } }
       if (d.role === 'admin') {
-        setUser({ name: 'Admin', email: d.email || '' });
+        setUser({ name: 'Admin', email: d.email || '', role: 'admin' });
       } else if (d.role === 'customer' && d.customer) {
-        setUser({ name: d.customer.name, email: d.customer.email });
+        setUser({ name: d.customer.name, email: d.customer.email, role: 'customer' });
       }
     }).catch(() => {});
   }, []);
@@ -25,7 +25,7 @@ export default function NavBar({ product = 'The Fundamentals' }: { product?: str
   const logout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
     setUser(null); setOpen(false);
-    window.location.reload();
+    window.location.assign('/checkout');
   };
 
   const initials = user?.name?.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() || '';
@@ -53,8 +53,8 @@ export default function NavBar({ product = 'The Fundamentals' }: { product?: str
                     <p className="text-white text-sm font-semibold truncate">{user.name}</p>
                     <p className="text-gray-400 text-xs truncate">{user.email}</p>
                   </div>
-                  <Link href="/dashboard" onClick={() => setOpen(false)} className="flex items-center gap-2 px-4 py-2 text-sm text-gray-300 hover:text-white hover:bg-[var(--card)] transition-colors">
-                    <LayoutDashboard size={14} /> Dashboard
+                  <Link href={user.role === 'admin' ? '/dashboard' : '/account'} onClick={() => setOpen(false)} className="flex items-center gap-2 px-4 py-2 text-sm text-gray-300 hover:text-white hover:bg-[var(--card)] transition-colors">
+                    <LayoutDashboard size={14} /> {user.role === 'admin' ? 'Dashboard' : 'My Account'}
                   </Link>
                   <button onClick={logout} className="flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-[var(--card)] transition-colors w-full text-left">
                     <LogOut size={14} /> Sign Out

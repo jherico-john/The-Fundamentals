@@ -3,6 +3,8 @@ import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { BookOpen, UserPlus, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { safeNext } from '@/lib/safeRedirect';
+import SiteFooter from '@/components/SiteFooter';
 
 function SignupForm() {
   const sp = useSearchParams();
@@ -35,7 +37,7 @@ function SignupForm() {
       }
       // Show success state — keep button loading during the brief redirect delay
       setDone(true);
-      setTimeout(() => { window.location.href = '/checkout'; }, 1500);
+      setTimeout(() => { window.location.assign(safeNext(sp.get('next'), '/account')); }, 1200);
     } catch {
       setError('Network error. Please try again.');
       setLoading(false);
@@ -46,12 +48,12 @@ function SignupForm() {
     <div className="glass-card p-8 flex flex-col items-center text-center" style={{ borderColor: 'rgba(0,255,135,0.3)' }}>
       <CheckCircle2 size={44} className="text-[var(--green)] mb-3" />
       <p className="text-white font-bold text-lg mb-1">Account Created!</p>
-      <p className="text-gray-400 text-sm">Redirecting you to checkout…</p>
+      <p className="text-gray-400 text-sm">Taking you to your account…</p>
     </div>
   );
 
   return (
-    <div className="glass-card p-6 space-y-4" style={{ borderColor: 'rgba(0,255,135,0.2)' }}>
+    <form onSubmit={handle} className="glass-card p-6 space-y-4" style={{ borderColor: 'rgba(0,255,135,0.2)' }}>
       {referredByCode && (
         <div className="text-xs text-[var(--green)] bg-green-950 bg-opacity-30 border border-[var(--green-deeper)] rounded-lg px-3 py-2">
           👋 You were referred by a friend! Sign up to join the affiliate program and earn commissions too.
@@ -85,7 +87,7 @@ function SignupForm() {
         </div>
         <p className="text-[10px] text-gray-600 mt-1">No email confirmation required — you're in immediately.</p>
       </div>
-      <button onClick={handle} disabled={loading || !name || !email || !password}
+      <button type="submit" disabled={loading || !name || !email || !password}
         className="btn-shimmer w-full py-3 rounded-xl font-bold text-black flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
         {loading ? <><span className="animate-spin">⟳</span> Creating account…</> : <><UserPlus size={16} /> Create Free Account</>}
       </button>
@@ -93,19 +95,19 @@ function SignupForm() {
         Already have an account?{' '}
         <Link href="/login" className="text-[var(--green)] hover:underline font-medium">Sign in</Link>
       </p>
-    </div>
+    </form>
   );
 }
 
 export default function SignupPage() {
   return (
-    <main className="min-h-screen bg-radial-glow flex items-center justify-center px-4">
+    <main className="min-h-screen bg-radial-glow flex flex-col items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-3">
             <BookOpen size={28} className="text-[var(--green)]" />
             <span className="text-xl font-bold text-white" style={{ fontFamily: 'Bebas Neue, Impact, sans-serif', letterSpacing: '0.05em' }}>
-              The Fundamentals
+              Jherico Balasa Ministry
             </span>
           </div>
           <h1 className="text-2xl font-bold text-white mb-1">Create your account</h1>
@@ -118,6 +120,7 @@ export default function SignupPage() {
           <Link href="/checkout" className="hover:text-gray-400 transition-colors">← Back to checkout</Link>
         </p>
       </div>
+      <SiteFooter pageName="Create Account" showHelp={false} />
     </main>
   );
 }

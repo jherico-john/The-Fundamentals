@@ -1,17 +1,42 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { BookOpen, LogIn, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { safeNext } from '@/lib/safeRedirect';
+import SiteFooter from '@/components/SiteFooter';
 
-export default function LoginPage() {
+// v5 fix: the old page ignored ?admin=1 / ?next and always sent customers to
+// /checkout, whose "Dashboard" link then bounced them straight back here.
+//   admin    → ?next or /dashboard
+//   customer → ?next (never /dashboard) or /account (their own panel)
+function LoginForm() {
+  const sp = useSearchParams();
+  const next = sp.get('next');
+  const adminHint = sp.get('admin') === '1';
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw]     = useState(false);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState('');
 
+  const goAfter = (role: string) => {
+    if (role === 'admin') return safeNext(next, '/dashboard');
+    const n = safeNext(next, '/account');
+    return n.startsWith('/dashboard') ? '/account' : n;
+  };
+
+  // Already signed in? Go straight to where you belong instead of showing the form again.
+  useEffect(() => {
+    fetch('/api/auth/me').then(r => r.json()).then(d => {
+      if (d.authenticated) window.location.replace(goAfter(d.role));
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handle = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading || !email || !password) return;
     setLoading(true); setError('');
     try {
       const res  = await fetch('/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password }) });
@@ -24,7 +49,7 @@ export default function LoginPage() {
       }
       // Keep button in loading state during navigation (looks better than flashing)
       // Admin → dashboard, customers → back to checkout where they can see their profile
-      window.location.href = data.role === 'admin' ? '/dashboard' : '/checkout';
+      window.location.assign(goAfter(data.role));
     } catch {
       setError('Network error. Please try again.');
       setLoading(false);
@@ -32,21 +57,20 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen bg-radial-glow flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-3">
             <BookOpen size={28} className="text-[var(--green)]" />
             <span className="text-xl font-bold text-white" style={{ fontFamily: 'Bebas Neue, Impact, sans-serif', letterSpacing: '0.05em' }}>
-              The Fundamentals
+              Jherico Balasa Ministry
             </span>
           </div>
           <h1 className="text-2xl font-bold text-white mb-1">Welcome back</h1>
-          <p className="text-gray-400 text-sm">Sign in to your account</p>
+          <p className="text-gray-400 text-sm">{adminHint ? 'Admin sign in' : 'Sign in to your account'}</p>
         </div>
 
-        <div className="glass-card p-6 space-y-4" style={{ borderColor: 'rgba(0,255,135,0.2)' }}>
+        <form onSubmit={handle} className="glass-card p-6 space-y-4" style={{ borderColor: 'rgba(0,255,135,0.2)' }}>
           {error && (
             <div className="flex items-center gap-2 p-3 bg-red-950 bg-opacity-60 border border-red-800 rounded-lg text-xs text-red-300">
               <AlertCircle size={14} /> {error}
@@ -73,21 +97,29 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <button onClick={handle} disabled={loading || !email || !password}
+          <button type="submit" disabled={loading || !email || !password}
             className="btn-shimmer w-full py-3 rounded-xl font-bold text-black flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
             {loading ? <><span className="animate-spin">⟳</span> Signing in…</> : <><LogIn size={16} /> Sign In</>}
           </button>
 
           <p className="text-center text-xs text-gray-500">
             Don't have an account?{' '}
-            <Link href="/signup" className="text-[var(--green)] hover:underline font-medium">Create one free</Link>
+            <Link href={next ? `/signup?next=${encodeURIComponent(next)}` : '/signup'} className="text-[var(--green)] hover:underline font-medium">Create one free</Link>
           </p>
-        </div>
+        </form>
 
         <p className="text-center text-xs text-gray-600 mt-6">
           <Link href="/checkout" className="hover:text-gray-400 transition-colors">← Back to checkout</Link>
         </p>
       </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <main className="min-h-screen bg-radial-glow flex flex-col items-center justify-center px-4 py-10">
+      <Suspense fallback={<div className="text-gray-400 text-sm">Loading…</div>}><LoginForm /></Suspense>
+      <SiteFooter pageName="Sign In" showHelp={false} />
     </main>
   );
 }

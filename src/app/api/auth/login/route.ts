@@ -5,9 +5,12 @@ import { signCustomerSession, CUST_COOKIE, custCookieOpts, signAdminSession, ADM
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password } = await req.json();
+    const body = await req.json();
+    const email = String(body.email || '').trim();
+    const password = String(body.password || '');
+    if (!email || !password) return NextResponse.json({ error: 'Enter your email and password.' }, { status: 400 });
     // Admin login
-    if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
+    if (email.toLowerCase() === (process.env.ADMIN_EMAIL || '').trim().toLowerCase() && password === process.env.ADMIN_PASSWORD) {
       const res = NextResponse.json({ success: true, role: 'admin' });
       res.cookies.set(ADMIN_COOKIE, signAdminSession(), adminCookieOpts);
       return res;
@@ -21,6 +24,7 @@ export async function POST(req: NextRequest) {
     res.cookies.set(CUST_COOKIE, signCustomerSession(customer.id, customer.email), custCookieOpts);
     return res;
   } catch (err) {
+    console.error('[auth/login]', err);
     return NextResponse.json({ error: 'Login failed. Please try again.' }, { status: 500 });
   }
 }

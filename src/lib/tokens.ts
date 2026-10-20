@@ -69,3 +69,17 @@ export function verifyCustomerSession(v: string): { id: string; email: string } 
   return { id: p.id, email: p.email };
 }
 export const custCookieOpts = { path:'/', maxAge:60*60*24*7, sameSite:'lax' as const, httpOnly:true, secure: process.env.NODE_ENV==='production' };
+
+// ── Buyer flag (v5) — "this device has bought something" ─────────────────────
+// Non-httpOnly, 1 year. Read client-side by the ad pixels so Google/Meta/TikTok
+// stop re-targeting people who already bought (saves ad spend). Contains NO
+// personal data: just a signed list of purchased product slugs.
+export const BUYER_COOKIE = 'tf_buyer';
+export function signBuyerCookie(slugs: string[]): string {
+  return makeToken({ s: Array.from(new Set(slugs)).sort(), at: Math.floor(Date.now() / 1000) }, DL_SEC);
+}
+export function readBuyerCookie(v: string): string[] {
+  const p = readToken<{ s: string[] }>(v, DL_SEC);
+  return p?.s || [];
+}
+export const buyerCookieOpts = { path: '/', maxAge: 60 * 60 * 24 * 365, sameSite: 'lax' as const, httpOnly: false, secure: process.env.NODE_ENV === 'production' };
