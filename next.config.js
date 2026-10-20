@@ -12,10 +12,28 @@
 // the language data package as external so webpack never touches them.
 // ─────────────────────────────────────────────────────────────────────────────
 const nextConfig = {
+  // v5: SUNYL is the same product as Lifegroup Essentials — keep old links/ads alive.
+  async redirects() {
+    return [{ source: '/products/sunyl', destination: '/products/lifegroup', permanent: true }];
+  },
   experimental: {
+    // v5: make sure the OCR engine + BOTH language models are shipped inside the
+    // serverless function on Vercel (they are read from disk at runtime, so
+    // Next's static file tracing would otherwise miss them).
+    outputFileTracingIncludes: {
+      '/api/verify-receipt': [
+        './node_modules/tesseract.js/**/*',
+        './node_modules/tesseract.js-core/**/*',
+        './node_modules/@tesseract.js-data/eng/4.0.0_best_int/**/*',
+        './node_modules/@tesseract.js-data/eng/4.0.0/**/*',
+        './node_modules/sharp/**/*',
+        './node_modules/@img/**/*',
+      ],
+    },
     serverComponentsExternalPackages: [
       'jimp',
       'qrcode-reader',
+      'sharp',
       'tesseract.js',
       '@tesseract.js-data/eng',
       '@jimp/core',
@@ -30,6 +48,7 @@ const nextConfig = {
       config.externals = [
         ...existing,
         'tesseract.js',
+        'sharp',
         'jimp',
         'qrcode-reader',
         '@tesseract.js-data/eng',
