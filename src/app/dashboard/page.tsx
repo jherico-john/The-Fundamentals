@@ -5,6 +5,9 @@ import {
   ShoppingCart, Percent, LogOut, ChevronRight, ChevronDown, Copy, Check,
   RefreshCw, BookOpen, User,
 } from 'lucide-react';
+import AdOutcomesPanel from '@/components/AdOutcomesPanel';
+import SiteFooter from '@/components/SiteFooter';
+import { PRODUCTS } from '@/lib/products';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface Stats {
@@ -24,7 +27,7 @@ const TIER_COLOR: Record<string, string> = {
   primary:'#00FF87', secondary:'#00C46A', tertiary:'#FFA500', quaternary:'#FF6B6B', quinary:'#9B7EDE',
 };
 
-type View = 'dashboard' | 'affiliates' | 'purchases';
+type View = 'dashboard' | 'ads' | 'affiliates' | 'purchases';
 
 export default function DashboardPage() {
   const [view, setView]             = useState<View>('dashboard');
@@ -103,6 +106,7 @@ export default function DashboardPage() {
           <p className="text-xs text-slate-500 uppercase tracking-wider mb-3 px-2">Activity</p>
           {([
             { id:'dashboard', icon:<LayoutDashboard size={16}/>, label:'Dashboard' },
+            { id:'ads', icon:<TrendingUp size={16}/>, label:'Ad Campaigns' },
             { id:'affiliates', icon:<Users size={16}/>, label:'Affiliates' },
             { id:'purchases', icon:<ShoppingCart size={16}/>, label:'Purchases' },
           ] as { id: View; icon: React.ReactNode; label: string }[]).map(item => (
@@ -116,13 +120,7 @@ export default function DashboardPage() {
 
           <div className="mt-4 pt-4 border-t border-slate-700">
             <p className="text-xs text-slate-500 uppercase tracking-wider mb-3 px-2">Products</p>
-            {[
-              { label:'The Fundamentals', href:'/checkout' },
-              { label:'SUNYL 12 Lessons', href:'/products/sunyl' },
-              { label:'Encounter', href:'/products/encounter' },
-              { label:'Post-Encounter', href:'/products/post-encounter' },
-              { label:'Lifegroup Fundamentals', href:'/products/lifegroup' },
-            ].map(p => (
+            {PRODUCTS.map(p => ({ label: p.name, href: p.path })).map(p => (
               <a key={p.href} href={p.href} target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-slate-700 transition-colors">
                 <BookOpen size={13} /> {p.label}
@@ -153,14 +151,16 @@ export default function DashboardPage() {
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-xl font-bold text-white capitalize">{view === 'dashboard' ? 'Performance Overview' : view}</h1>
-              <p className="text-slate-400 text-xs mt-0.5">Ministry Checkout v4 · Real-time data from Supabase</p>
+              <h1 className="text-xl font-bold text-white capitalize">{view === 'dashboard' ? 'Performance Overview' : view === 'ads' ? 'Ad Campaign Outcomes — Google · Meta · TikTok' : view}</h1>
+              <p className="text-slate-400 text-xs mt-0.5">Ministry Checkout v5 · Real-time data from Supabase</p>
             </div>
             <button onClick={loadStats} disabled={loading}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-700 text-slate-300 hover:bg-slate-600 text-sm transition-colors">
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
             </button>
           </div>
+
+          {view === 'ads' && <AdOutcomesPanel />}
 
           {/* ── DASHBOARD VIEW ── */}
           {view === 'dashboard' && (
@@ -363,6 +363,7 @@ export default function DashboardPage() {
               )}
             </div>
           )}
+          <div className="mt-10"><SiteFooter pageName="Admin Dashboard" showHelp={false} /></div>
         </div>
       </main>
     </div>
