@@ -41,7 +41,7 @@ const EMAIL      = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'jhericojohnbalasa@g
 const REDIRECT_DELAY_SEC = 3;
 // Where the Thank You page opens. Default: a NEW tab. Set NEXT_PUBLIC_THANKYOU_OPEN_NEW_TAB=false
 // to go back to opening it in this same tab. (Literal env access so Next inlines it.)
-const NEW_TAB = process.env.NEXT_PUBLIC_THANKYOU_OPEN_NEW_TAB !== 'false';
+const NEW_TAB = process.env.NEXT_PUBLIC_THANKYOU_OPEN_NEW_TAB !== 'true';
 
 export default function ReceiptUploader({ productSlug, productName, price }: Props) {
   const pixel  = useMetaPixel();
