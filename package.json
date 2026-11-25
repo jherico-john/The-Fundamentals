@@ -1,13 +1,14 @@
 {
-  "name": "ministry-checkout-v5",
-  "version": "5.0.0",
+  "name": "ministry-checkout-v6",
+  "version": "6.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:receipts": "tsx tests/verify.test.ts"
+    "test:receipts": "tsx tests/verify.test.ts",
+    "test:v6": "tsx tests/v6.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
@@ -15,7 +16,7 @@
     "bcryptjs": "^2.4.3",
     "jimp": "^0.22.12",
     "lucide-react": "^0.383.0",
-    "next": "14.2.5",
+    "next": "14.2.35",
     "qrcode-reader": "^1.0.4",
     "react": "^18",
     "react-dom": "^18",
@@ -32,7 +33,7 @@
     "@types/uuid": "^9.0.7",
     "autoprefixer": "^10",
     "eslint": "^8",
-    "eslint-config-next": "14.2.5",
+    "eslint-config-next": "14.2.35",
     "postcss": "^8",
     "supabase": "^2.121.0",
     "tailwindcss": "^3.4.1",
