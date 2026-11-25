@@ -41,7 +41,7 @@ const EMAIL      = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'jhericojohnbalasa@g
 const REDIRECT_DELAY_SEC = 3;
 // Where the Thank You page opens. Default: a NEW tab. Set NEXT_PUBLIC_THANKYOU_OPEN_NEW_TAB=false
 // to go back to opening it in this same tab. (Literal env access so Next inlines it.)
-const NEW_TAB = process.env.NEXT_PUBLIC_THANKYOU_OPEN_NEW_TAB !== 'true';
+const NEW_TAB = process.env.NEXT_PUBLIC_THANKYOU_OPEN_NEW_TAB !== 'false';
 
 export default function ReceiptUploader({ productSlug, productName, price }: Props) {
   const pixel  = useMetaPixel();
@@ -60,6 +60,7 @@ export default function ReceiptUploader({ productSlug, productName, price }: Pro
   const [prog, setProg]           = useState(0);
   const [destination, setDestination] = useState<string | null>(null);
   const [redirectIn, setRedirectIn]   = useState<number | null>(null);
+  const [popupBlocked, setPopupBlocked] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const progRef = useRef<NodeJS.Timeout | null>(null);
   const redirectRef = useRef<NodeJS.Timeout | null>(null);
@@ -131,11 +132,13 @@ export default function ReceiptUploader({ productSlug, productName, price }: Pro
       setRedirectIn(Math.max(left, 0));
       if (left <= 0) {
         if (redirectRef.current) clearInterval(redirectRef.current);
-        // A new tab opened by a timer (not a tap) can be blocked by the phone's popup blocker.
-        // If that happens we fall back to this tab so the customer is never left without the page.
+        // New-tab mode NEVER navigates this tab (so the checkout page and its tracking
+        // events are never cut off). If the browser blocks the timer-opened tab, the
+        // customer simply taps the "Go to My Download Page" button.
         if (NEW_TAB) {
           const w = window.open(url as string, '_blank');
-          if (w) { try { w.opener = null; } catch { /* ignore */ } } else window.location.assign(url as string);
+          if (w) { try { w.opener = null; } catch { /* ignore */ } } else setPopupBlocked(true);
+          setRedirectIn(null);
         } else {
           window.location.assign(url as string);
         }
@@ -146,7 +149,7 @@ export default function ReceiptUploader({ productSlug, productName, price }: Pro
 
   const processFile = useCallback(async (file: File) => {
     setPreview(URL.createObjectURL(file)); setFname(file.name);
-    setStage('verifying'); setError(''); setErrDetail(null); setVerified(null); setRedirectIn(null);
+    setStage('verifying'); setError(''); setErrDetail(null); setVerified(null); setRedirectIn(null); setPopupBlocked(false);
     startProg();
     const form = new FormData();
     form.append('receipt', file);
@@ -393,6 +396,11 @@ export default function ReceiptUploader({ productSlug, productName, price }: Pro
                 {justVerified && redirectIn !== null && (
                   <p className="text-fg2 text-center text-base" data-testid="redirect-notice">
                     {NEW_TAB ? 'Opening your download page in a new tab in' : 'Taking you to your download page in'} <strong className="text-fg">{redirectIn}</strong> second{redirectIn === 1 ? '' : 's'}…
+                  </p>
+                )}
+                {justVerified && popupBlocked && (
+                  <p className="alert alert-warn text-center" data-testid="popup-blocked">
+                    Your browser did not open the new tab. Please tap the button below to open your download page.
                   </p>
                 )}
                 {/* One destination only. Opens in a new tab (default) or this tab, see NEW_TAB above. */}
