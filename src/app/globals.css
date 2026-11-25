@@ -1,50 +1,162 @@
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700&display=swap');
+/* ─────────────────────────────────────────────────────────────────────────────
+   Ministry Checkout v6 — design tokens
+   Two themes (light / dark) driven by <html data-theme="...">.
+   The theme is chosen before first paint by an inline script in layout.tsx
+   (saved choice → system preference → light), so there is no flash.
+   Legacy variable names (--green*) are kept as aliases so older files keep
+   working; they now resolve to the neutral blue accent, not green.
+   ───────────────────────────────────────────────────────────────────────────── */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --card: #ffffff;
+  --border: #dce2ea;
+  --border-strong: #b9c3d1;
+  --text: #0f1b2d;
+  --text-2: #34445c;
+  --muted: #5a6a80;
+  --accent: #1d4ed8;
+  --accent-solid: #1d4ed8;
+  --accent-solid-hover: #1a43bb;
+  --on-accent: #ffffff;
+  --accent-soft: #e8effd;
+  --ok-bg: #eaf6ee;   --ok-border: #a9d8b8;   --ok-text: #14532d;
+  --warn-bg: #fff8e6; --warn-border: #f2d48a; --warn-text: #6b4a00;
+  --danger-bg: #fdecec; --danger-border: #f3b5b5; --danger-text: #8a1c1c;
+  --info-bg: #eaf1fe; --info-border: #b8ccf5; --info-text: #1e3a8a;
+  --shadow: 0 1px 2px rgba(15, 27, 45, 0.06), 0 4px 16px rgba(15, 27, 45, 0.04);
+  --scrim: rgba(245, 247, 250, 0.92);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0c1118;
+  --surface: #111823;
+  --card: #141c28;
+  --border: #263041;
+  --border-strong: #3a4659;
+  --text: #e8edf4;
+  --text-2: #c3ccd9;
+  --muted: #8e9bb0;
+  --accent: #6aa6ff;
+  --accent-solid: #2f6feb;
+  --accent-solid-hover: #2862d3;
+  --on-accent: #ffffff;
+  --accent-soft: #13233f;
+  --ok-bg: #10261a;   --ok-border: #1f5233;   --ok-text: #9be3b4;
+  --warn-bg: #2a2110; --warn-border: #5c4716; --warn-text: #f2d48a;
+  --danger-bg: #2b1416; --danger-border: #6b2328; --danger-text: #f4a9ab;
+  --info-bg: #101d36; --info-border: #284274; --info-text: #a9c4fa;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --scrim: rgba(12, 17, 24, 0.92);
+}
+
+/* Legacy aliases (older components reference these names) */
 :root {
-  --green: #00FF87; --green-dark: #00C46A; --green-deeper: #007A42;
-  --bg: #051A0D; --surface: #0A2E18; --card: #0D3B20; --border: #1A5C35;
-  --dash-bg: #F0F4F8; --dash-card: #FFFFFF; --dash-border: #E2E8F0;
-  --dash-text: #1A202C; --dash-muted: #718096;
+  --green: var(--accent);
+  --green-dark: var(--accent);
+  --green-deeper: var(--accent-soft);
+  /* Admin dashboard keeps its own light palette */
+  --dash-bg: #f0f4f8; --dash-card: #ffffff; --dash-border: #e2e8f0;
+  --dash-text: #1a202c; --dash-muted: #718096;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html { scroll-behavior: smooth; }
-body { background: var(--bg); color: #e8f5ee; font-family: 'Inter', system-ui, sans-serif; min-height: 100vh; overflow-x: hidden; }
+html { scroll-behavior: smooth; scroll-padding-top: 5rem; -webkit-text-size-adjust: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3 { letter-spacing: -0.01em; line-height: 1.25; }
+img { max-width: 100%; }
+::selection { background: var(--accent-soft); color: var(--text); }
 
-.bg-radial-glow {
-  background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(0,255,135,0.12) 0%, transparent 70%),
-    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(0,196,106,0.06) 0%, transparent 60%), var(--bg);
-}
-.glass-card { background: rgba(13,59,32,0.6); backdrop-filter: blur(12px); border: 1px solid rgba(0,255,135,0.15); border-radius: 16px; }
-.btn-shimmer {
-  background: linear-gradient(90deg, var(--green-dark) 0%, var(--green) 30%, #6BFFB8 50%, var(--green) 70%, var(--green-dark) 100%);
-  background-size: 200% auto; animation: shimmer 2.5s linear infinite;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-@keyframes shimmer { 0%{background-position:200% center} 100%{background-position:-200% center} }
-@keyframes pulseGlow {
-  0%,100%{box-shadow:0 0 20px rgba(0,255,135,0.3),0 0 40px rgba(0,255,135,0.1)}
-  50%{box-shadow:0 0 40px rgba(0,255,135,0.6),0 0 80px rgba(0,255,135,0.25)}
-}
-.glow-pulse { animation: pulseGlow 2.5s ease-in-out infinite; }
-@keyframes fadeUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
-.fade-up   { animation: fadeUp 0.6s ease forwards; }
-.fade-up-1 { animation: fadeUp 0.6s ease 0.1s forwards; opacity:0; }
-.fade-up-2 { animation: fadeUp 0.6s ease 0.2s forwards; opacity:0; }
-.fade-up-3 { animation: fadeUp 0.6s ease 0.35s forwards; opacity:0; }
-@keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
-.float-anim { animation: float 5s ease-in-out infinite; }
-.upload-zone { border: 2px dashed var(--border); border-radius: 16px; transition: all 0.2s; cursor: pointer; }
-.upload-zone:hover, .upload-zone.drag-over { border-color: var(--green); background: rgba(0,255,135,0.04); }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 
-/* ── Dashboard light theme ── */
+/* ── Surfaces ── */
+.bg-radial-glow { background: var(--bg); }
+.card, .glass-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+/* ── Buttons ── */
+.btn-primary, .btn-shimmer {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  background: var(--accent-solid); color: var(--on-accent);
+  font-weight: 600; min-height: 48px; border-radius: 10px;
+  transition: background-color 0.15s ease;
+}
+.btn-primary:hover, .btn-shimmer:hover { background: var(--accent-solid-hover); }
+.btn-primary:disabled, .btn-shimmer:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn-secondary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  background: transparent; color: var(--text); border: 1px solid var(--border-strong);
+  font-weight: 600; min-height: 44px; border-radius: 10px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.btn-secondary:hover { background: var(--accent-soft); border-color: var(--accent); }
+
+/* ── Form fields ── */
+.field {
+  width: 100%; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: 10px;
+  padding: 0.7rem 0.85rem; font-size: 1rem; min-height: 46px;
+}
+.field::placeholder { color: var(--muted); opacity: 0.8; }
+.field:focus { outline: 3px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+
+/* ── Status boxes (theme-aware) ── */
+.alert { border-radius: 10px; border: 1px solid; padding: 0.75rem 0.9rem; font-size: 0.9375rem; line-height: 1.5; }
+.alert-ok     { background: var(--ok-bg);     border-color: var(--ok-border);     color: var(--ok-text); }
+.alert-warn   { background: var(--warn-bg);   border-color: var(--warn-border);   color: var(--warn-text); }
+.alert-error  { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger-text); }
+.alert-info   { background: var(--info-bg);   border-color: var(--info-border);   color: var(--info-text); }
+
+/* ── Upload zone ── */
+.upload-zone { border: 2px dashed var(--border-strong); border-radius: 12px; transition: border-color 0.15s, background-color 0.15s; cursor: pointer; background: var(--surface); }
+.upload-zone:hover, .upload-zone.drag-over { border-color: var(--accent); background: var(--accent-soft); }
+
+/* ── Checkout ── */
+.section-anchor { scroll-margin-top: 5rem; }
+.jump-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  background: var(--scrim); border-top: 1px solid var(--border);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.jump-bar[data-hidden='true'] { transform: translateY(110%); opacity: 0; pointer-events: none; }
+.video-frame { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); background: #000; }
+.video-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+/* ── No decorative motion (kept as no-ops so older class names are harmless) ── */
+.glow-pulse, .float-anim, .fade-up, .fade-up-1, .fade-up-2, .fade-up-3 { animation: none; opacity: 1; }
+
+/* ── Dashboard light theme (admin) ── */
 .dash-body { background: var(--dash-bg); color: var(--dash-text); }
 .dash-card { background: var(--dash-card); border: 1px solid var(--dash-border); border-radius: 12px; }
-.dash-stat-icon { width: 44px; height: 44px; border-radius: 10px; display:flex; align-items:center; justify-content:center; }
+.dash-stat-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
 
-::-webkit-scrollbar { width:6px; }
+::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius:3px; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
