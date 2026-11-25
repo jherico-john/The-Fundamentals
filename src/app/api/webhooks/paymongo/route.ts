@@ -2,14 +2,18 @@
 // Handles both source.chargeable and payment.paid webhook events from PayMongo.
 
 import { NextRequest, NextResponse } from 'next/server';
+import { legacyPayMongoEnabled, legacyDisabledResponse } from '@/lib/legacyGate';
 import { verifyWebhookSignature, createPaymentFromSource } from '@/lib/paymongo';
 
 export async function POST(req: NextRequest) {
+  if (!legacyPayMongoEnabled()) return legacyDisabledResponse();
   const rawBody = await req.text();
   const sigHeader = req.headers.get('paymongo-signature') || '';
   const secret = process.env.PAYMONGO_WEBHOOK_SECRET || '';
 
-  if (secret && !verifyWebhookSignature(rawBody, sigHeader, secret)) {
+  // Fail CLOSED: with no secret configured, nothing can be trusted.
+  if (!secret) return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 503 });
+  if (!verifyWebhookSignature(rawBody, sigHeader, secret)) {
     console.warn('[webhook] Invalid PayMongo signature');
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }
