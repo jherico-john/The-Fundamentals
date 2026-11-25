@@ -6,6 +6,7 @@
 //  • a screenshot beside the step wherever we have one
 //  • a plain "what happens at the end" step: you are taken to the download page
 //    in this same window — nothing opens in another tab.
+const NEW_TAB = process.env.NEXT_PUBLIC_THANKYOU_OPEN_NEW_TAB !== 'false';
 const GCASH_NAME = process.env.NEXT_PUBLIC_GCASH_NAME || 'J. Balasa';
 
 interface Step {
@@ -75,7 +76,9 @@ const STEPS: Step[] = [
     title: 'Wait a few seconds. You will be taken to your downloads.',
     body: [
       'We check your receipt automatically. This takes only a few seconds.',
-      'When it is approved, this page takes you to your download page in this same window. Your files are on that page. No other tab opens.',
+      NEW_TAB
+        ? 'When it is approved, your download page opens in a new tab. Your files are on that page. If it does not open, tap the "Go to My Download Page" button.'
+        : 'When it is approved, this page takes you to your download page in this same window. Your files are on that page. No other tab opens.',
     ],
     tip: 'Please stay on the page while it checks. Do not pay again.',
   },
