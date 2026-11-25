@@ -28,16 +28,26 @@ async function readEdgeToken<T>(token: string, secret: string): Promise<T | null
   } catch { return null; }
 }
 
+// v6: in production a missing / placeholder secret means "nobody is signed in"
+// (fail closed) instead of verifying against a publicly known dev default.
+function edgeSecret(name: string, devFallback: string): string | null {
+  const v = (process.env[name] || '').trim();
+  if (v.length >= 16 && !v.startsWith('REPLACE_WITH')) return v;
+  return process.env.NODE_ENV === 'production' ? null : devFallback;
+}
+
 export async function isAdminEdge(cookie: string | undefined): Promise<boolean> {
   if (!cookie) return false;
-  const secret = process.env.ADMIN_SESSION_SECRET || 'dev-adm-secret-replace-in-prod-32';
+  const secret = edgeSecret('ADMIN_SESSION_SECRET', 'dev-adm-secret-replace-in-prod-32');
+  if (!secret) return false;
   const p = await readEdgeToken<{ role: string; iat: number }>(cookie, secret);
   return !!p && p.role === 'admin' && Math.floor(Date.now() / 1000) - p.iat <= 60 * 60 * 8;
 }
 
 export async function isCustomerEdge(cookie: string | undefined): Promise<boolean> {
   if (!cookie) return false;
-  const secret = process.env.DOWNLOAD_TOKEN_SECRET || 'dev-dl-secret-replace-in-prod-32c';
+  const secret = edgeSecret('DOWNLOAD_TOKEN_SECRET', 'dev-dl-secret-replace-in-prod-32c');
+  if (!secret) return false;
   const p = await readEdgeToken<{ id: string; iat: number }>(cookie, secret);
   return !!p && !!p.id && Math.floor(Date.now() / 1000) - p.iat <= 60 * 60 * 24 * 7;
 }
