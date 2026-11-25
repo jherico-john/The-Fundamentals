@@ -1,7 +1,8 @@
-// src/app/api/purchase-status/route.ts — v5
+// src/app/api/purchase-status/route.ts — v6
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPurchaseCookie, PURCHASE_COOKIE } from '@/lib/tokens';
 import { resolveSlug, getDownloadPageUrl } from '@/lib/products';
+import { safeExternalUrl } from '@/lib/safeUrl';
 
 export async function GET(req: NextRequest) {
   const slug = resolveSlug(req.nextUrl.searchParams.get('product') || 'fundamentals') || 'fundamentals';
@@ -11,8 +12,8 @@ export async function GET(req: NextRequest) {
   if (!p) return NextResponse.json({ purchased: false });
   return NextResponse.json({
     purchased: true, referenceNumber: p.refNo, amount: p.amount, purchasedAt: p.at,
-    downloadPageUrl: getDownloadPageUrl(slug), product: slug,
-  });
+    downloadPageUrl: safeExternalUrl(getDownloadPageUrl(slug)), product: slug,
+  }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function DELETE(req: NextRequest) {
