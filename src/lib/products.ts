@@ -1,4 +1,4 @@
-// src/lib/products.ts — v5
+// src/lib/products.ts — v6
 // ─────────────────────────────────────────────────────────────────────────────
 // Central product registry — single source of truth for every product.
 // Every page, component and API route reads from here.
@@ -10,6 +10,15 @@
 //   • Added: Post-encounter (697), SOL (1997), All-in-one Bundle (sample 2997).
 //   • Env reads use LITERAL `process.env.NEXT_PUBLIC_…` so Next can inline them
 //     in client bundles (dynamic process.env[key] is NOT inlined client-side).
+//
+// v6 changes:
+//   • Post-Encounter 497, SOL 1, 2 & 3 (Lesson 1–11 · 2–11 · 3–11) 1597.
+//   • ONE redirect after payment: the funnel Thank You page. The MediaFire file
+//     links are discontinued (kept commented out in the .env templates) — the
+//     download links now live on the Thank You page itself.
+//   • Thank You page URL can be set server-side only (DOWNLOAD_PAGE_URL_<SLUG>)
+//     so it is not shipped in the browser bundle; NEXT_PUBLIC_DOWNLOAD_PAGE_URL_*
+//     still works as a fallback.
 //
 // To add a product: add its env vars, add one entry below, create a page that
 // uses ProductPageTemplate, and add its file env key in FILE_ENV below.
@@ -49,11 +58,11 @@ const P = {
   'pre-encounter':  num(process.env.NEXT_PUBLIC_PRODUCT_PRE_ENCOUNTER_PRICE, 297),
   lifegroup:        LIFEGROUP_PRICE,
   encounter:        num(process.env.NEXT_PUBLIC_PRODUCT_ENCOUNTER_PRICE, 997),
-  'post-encounter': num(process.env.NEXT_PUBLIC_PRODUCT_POST_ENCOUNTER_PRICE, 697),
-  sol:              num(process.env.NEXT_PUBLIC_PRODUCT_SOL_PRICE, 1997),
+  'post-encounter': num(process.env.NEXT_PUBLIC_PRODUCT_POST_ENCOUNTER_PRICE, 497),
+  sol:              num(process.env.NEXT_PUBLIC_PRODUCT_SOL_PRICE, 1597),
 };
 const INDIVIDUAL_TOTAL = Object.values(P).reduce((a, b) => a + b, 0);
-// Sample limited-time bundle price (₱4,982 of products for ₱2,997). Change in env.
+// Limited-time bundle price (set NEXT_PUBLIC_PRODUCT_BUNDLE_PRICE). Default is a sample value.
 const BUNDLE_PRICE = num(process.env.NEXT_PUBLIC_PRODUCT_BUNDLE_PRICE, 2997);
 
 export const PRODUCTS: ProductMeta[] = [
@@ -93,11 +102,11 @@ export const PRODUCTS: ProductMeta[] = [
     tagline: 'Sustain the fire after the Encounter weekend',
   },
   {
-    slug: 'sol', name: 'SOL', shortName: 'SOL',
+    slug: 'sol', name: 'SOL 1, 2 & 3', shortName: 'SOL',
     path: '/products/sol',
     affiliateLink: process.env.NEXT_PUBLIC_AFFILIATE_LINK_SOL || 'https://jhericojohnbalasa.systeme.io/sol-truth',
-    price: P.sol, originalPrice: 3997, lessons: 24,
-    tagline: 'The complete leadership formation track — built to be taught',
+    price: P.sol, originalPrice: 3997, lessons: 0,
+    tagline: 'SOL 1, 2 and 3 — Lesson 1–11, Lesson 2–11 and Lesson 3–11, ready to teach',
   },
   {
     slug: 'bundle', name: 'Complete Ministry Bundle', shortName: 'All-in-One Bundle',
@@ -135,18 +144,21 @@ export function getIndividualProducts(): ProductMeta[] {
 
 export const BUNDLE_OFFER_ENDS = process.env.NEXT_PUBLIC_BUNDLE_OFFER_ENDS || '';
 
-// ── Server-side env keys (file delivery + thank-you page) ────────────────────
+// ── Server-side env keys (thank-you page + legacy file links) ────────────────
 // Server routes read these dynamically, which is fine (not client-inlined).
+// `file` = DISCONTINUED MediaFire direct-download links. They are no longer used
+// by any route (v6: single redirect to the Thank You page). Kept only so the
+// links can be re-enabled later without touching the registry.
 export const FILE_ENV: Record<ProductSlug, { file: string[]; page: string[] }> = {
-  'fundamentals':   { file: ['PRODUCT_FILE_URL_FUNDAMENTALS'],   page: ['NEXT_PUBLIC_DOWNLOAD_PAGE_URL_FUNDAMENTALS'] },
-  'pre-encounter':  { file: ['PRODUCT_FILE_URL_PRE_ENCOUNTER'],  page: ['NEXT_PUBLIC_DOWNLOAD_PAGE_URL_PRE_ENCOUNTER'] },
+  'fundamentals':   { file: ['PRODUCT_FILE_URL_FUNDAMENTALS'],   page: ['DOWNLOAD_PAGE_URL_FUNDAMENTALS', 'NEXT_PUBLIC_DOWNLOAD_PAGE_URL_FUNDAMENTALS'] },
+  'pre-encounter':  { file: ['PRODUCT_FILE_URL_PRE_ENCOUNTER'],  page: ['DOWNLOAD_PAGE_URL_PRE_ENCOUNTER', 'NEXT_PUBLIC_DOWNLOAD_PAGE_URL_PRE_ENCOUNTER'] },
   // SUNYL env vars remain as fallbacks so the existing Mediafire link keeps working
   'lifegroup':      { file: ['PRODUCT_FILE_URL_LIFEGROUP', 'PRODUCT_FILE_URL_SUNYL'],
-                      page: ['NEXT_PUBLIC_DOWNLOAD_PAGE_URL_LIFEGROUP', 'NEXT_PUBLIC_DOWNLOAD_PAGE_URL_SUNYL'] },
-  'encounter':      { file: ['PRODUCT_FILE_URL_ENCOUNTER'],      page: ['NEXT_PUBLIC_DOWNLOAD_PAGE_URL_ENCOUNTER'] },
-  'post-encounter': { file: ['PRODUCT_FILE_URL_POST_ENCOUNTER'], page: ['NEXT_PUBLIC_DOWNLOAD_PAGE_URL_POST_ENCOUNTER'] },
-  'sol':            { file: ['PRODUCT_FILE_URL_SOL'],            page: ['NEXT_PUBLIC_DOWNLOAD_PAGE_URL_SOL'] },
-  'bundle':         { file: ['PRODUCT_FILE_URL_BUNDLE'],         page: ['NEXT_PUBLIC_DOWNLOAD_PAGE_URL_BUNDLE'] },
+                      page: ['DOWNLOAD_PAGE_URL_LIFEGROUP', 'NEXT_PUBLIC_DOWNLOAD_PAGE_URL_LIFEGROUP', 'NEXT_PUBLIC_DOWNLOAD_PAGE_URL_SUNYL'] },
+  'encounter':      { file: ['PRODUCT_FILE_URL_ENCOUNTER'],      page: ['DOWNLOAD_PAGE_URL_ENCOUNTER', 'NEXT_PUBLIC_DOWNLOAD_PAGE_URL_ENCOUNTER'] },
+  'post-encounter': { file: ['PRODUCT_FILE_URL_POST_ENCOUNTER'], page: ['DOWNLOAD_PAGE_URL_POST_ENCOUNTER', 'NEXT_PUBLIC_DOWNLOAD_PAGE_URL_POST_ENCOUNTER'] },
+  'sol':            { file: ['PRODUCT_FILE_URL_SOL'],            page: ['DOWNLOAD_PAGE_URL_SOL', 'NEXT_PUBLIC_DOWNLOAD_PAGE_URL_SOL'] },
+  'bundle':         { file: ['PRODUCT_FILE_URL_BUNDLE'],         page: ['DOWNLOAD_PAGE_URL_BUNDLE', 'NEXT_PUBLIC_DOWNLOAD_PAGE_URL_BUNDLE'] },
 };
 
 function firstEnv(keys: string[]): string {
@@ -157,6 +169,7 @@ function firstEnv(keys: string[]): string {
   return '';
 }
 
+/** @deprecated v6 — direct MediaFire redirect is discontinued; not called by any route. */
 export function getFileUrl(slug: ProductSlug): string { return firstEnv(FILE_ENV[slug].file); }
 export function getDownloadPageUrl(slug: ProductSlug): string {
   return firstEnv(FILE_ENV[slug].page) || firstEnv(FILE_ENV.fundamentals.page);
