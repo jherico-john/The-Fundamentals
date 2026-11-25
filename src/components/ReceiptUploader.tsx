@@ -4,23 +4,26 @@ import { useTikTokPixel } from '@/lib/useTikTokPixel';
 import { useGoogleAds } from '@/lib/useGoogleAds';
 import PaymentChannelsPanel from '@/components/PaymentChannelsPanel';
 import type { ReceiptError } from '@/lib/receiptErrors';
-// ReceiptUploader — v5
+import { safeExternalUrl } from '@/lib/safeUrl';
+// ReceiptUploader — v6
+// • ONE redirect: after the receipt is verified the customer is sent to the
+//   funnel's Thank You page (same tab). The direct MediaFire download and the
+//   second redirect are gone — the download links live on the Thank You page.
 // • Hybrid payments: GCash primary + banks/e-wallets bridged through InstaPay
 // • Channel-aware error cards (title, explanation, fix steps, what we read)
 // • Meta + TikTok + Google Ads purchase events, fired with the CATALOG price
-// • Bundle purchases download every included file
+//   (unchanged), always BEFORE the redirect starts.
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Upload, CheckCircle2, XCircle, Loader2, Download, AlertTriangle,
-  Copy, Check, Smartphone, RefreshCw, ExternalLink, Info, RotateCcw, QrCode,
+  Copy, Check, RefreshCw, ArrowRight, Info, RotateCcw,
 } from 'lucide-react';
 
 interface Props {
   productSlug: string;
   productName: string;
   price: number;
-  downloadPage: string;
 }
 
 type Stage = 'checking' | 'idle' | 'verifying' | 'success' | 'error';
@@ -34,8 +37,10 @@ const GCASH_NUM  = process.env.NEXT_PUBLIC_GCASH_NUMBER  || '09XX XXX XXXX';
 const GCASH_NAME = process.env.NEXT_PUBLIC_GCASH_NAME    || 'J. Balasa';
 const CUR        = process.env.NEXT_PUBLIC_CURRENCY      || 'PHP';
 const EMAIL      = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'jhericojohnbalasa@gmail.com';
+// Tracking pixels need a moment to send before the page is left (unchanged from v5).
+const REDIRECT_DELAY_SEC = 3;
 
-export default function ReceiptUploader({ productSlug, productName, price, downloadPage }: Props) {
+export default function ReceiptUploader({ productSlug, productName, price }: Props) {
   const pixel  = useMetaPixel();
   const tiktok = useTikTokPixel();
   const google = useGoogleAds();
@@ -48,11 +53,13 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
   const [error, setError]         = useState('');
   const [verified, setVerified]   = useState<VerifiedData | null>(null);
   const [copiedNum, setCopiedNum] = useState(false);
-  const [dlDone, setDlDone]       = useState(false);
   const [resetting, setResetting] = useState(false);
   const [prog, setProg]           = useState(0);
+  const [destination, setDestination] = useState<string | null>(null);
+  const [redirectIn, setRedirectIn]   = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const progRef = useRef<NodeJS.Timeout | null>(null);
+  const redirectRef = useRef<NodeJS.Timeout | null>(null);
 
   // ── Persist purchase state per product ───────────────────────────────────────
   useEffect(() => {
@@ -60,12 +67,13 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
       .then(r => r.json())
       .then(d => {
         if (d.purchased) {
+          setDestination(safeExternalUrl(d.downloadPageUrl));
           setVerified({
             referenceNumber: d.referenceNumber, amount: d.amount,
             dateStr: new Date(d.purchasedAt * 1000).toLocaleDateString('en-PH'),
             token: '', productSlug,
           });
-          setStage('success'); setDlDone(true);
+          setStage('success');
         } else { setStage('idle'); }
       }).catch(() => setStage('idle'));
   }, [productSlug]);
@@ -79,13 +87,56 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
     }, 400);
   }, []);
   const endProg = useCallback(() => { if (progRef.current) clearInterval(progRef.current); setProg(100); }, []);
-  useEffect(() => () => { if (progRef.current) clearInterval(progRef.current); }, []);
+  useEffect(() => () => {
+    if (progRef.current) clearInterval(progRef.current);
+    if (redirectRef.current) clearInterval(redirectRef.current);
+  }, []);
 
   const getAffCode = () => { const m = document.cookie.match(/affiliate_ref=([^;]+)/); return m ? m[1] : null; };
 
+  // ── The single post-payment redirect ─────────────────────────────────────────
+  // 1) confirm the token  2) fire Meta / TikTok / Google purchase events
+  // 3) count down, then send the customer to the funnel Thank You page (same tab).
+  const finishPurchase = useCallback(async (token: string, fallbackUrl: string | null) => {
+    let url = safeExternalUrl(fallbackUrl);
+    let refNo: string | undefined;
+    try {
+      const res  = await fetch(`/api/download-token?token=${encodeURIComponent(token)}&product=${productSlug}`);
+      const data = await res.json();
+      if (res.ok && data.valid) {
+        url = safeExternalUrl(data.downloadPageUrl) || url;
+        refNo = data.referenceNumber || undefined;
+      }
+    } catch { /* the verify response already carries the destination */ }
+    setDestination(url);
+
+    // ── Purchase events: Meta + TikTok + Google Ads ──────────────────────────
+    // value = CATALOG price (e.g. 397 even if the bank added a ₱10 fee), so all
+    // three engines report the same revenue per product.
+    const conv = convRef.current;
+    const safePrice = conv && Number.isFinite(conv.value) && conv.value > 0 ? conv.value : (Number.isFinite(price) && price > 0 ? price : 0);
+    pixel.trackPurchase({ name: productName, price: safePrice, currency: 'PHP', transactionId: refNo, contentId: productSlug });
+    tiktok.trackPurchase({ name: productName, price: safePrice, currency: 'PHP', transactionId: refNo, contentId: productSlug });
+    google.trackPurchase({ slug: productSlug, name: productName, price: safePrice, currency: 'PHP', transactionId: refNo, newCustomer: conv?.newCustomer });
+    // ─────────────────────────────────────────────────────────────────────────
+
+    if (!url) return; // no destination configured: the support notice below tells the customer what to do
+    let left = REDIRECT_DELAY_SEC;
+    setRedirectIn(left);
+    redirectRef.current = setInterval(() => {
+      left -= 1;
+      setRedirectIn(Math.max(left, 0));
+      if (left <= 0) {
+        if (redirectRef.current) clearInterval(redirectRef.current);
+        window.location.assign(url as string);
+      }
+    }, 1000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productSlug, productName, price]);
+
   const processFile = useCallback(async (file: File) => {
     setPreview(URL.createObjectURL(file)); setFname(file.name);
-    setStage('verifying'); setError(''); setErrDetail(null); setVerified(null); setDlDone(false);
+    setStage('verifying'); setError(''); setErrDetail(null); setVerified(null); setRedirectIn(null);
     startProg();
     const form = new FormData();
     form.append('receipt', file);
@@ -102,43 +153,20 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
       convRef.current = data.conversion || null;
       setVerified({ referenceNumber: data.data.referenceNumber, amount: data.data.amount, dateStr: data.data.dateStr, token: data.token, productSlug, warnings: data.warnings, testMode: data.testMode, channelLabel: data.data.channelLabel, transferFee: data.data.transferFee });
       setStage('success');
-      triggerDownload(data.token);
+      void finishPurchase(data.token, data.downloadPageUrl || null);
     } catch { endProg(); setStage('error'); setError('Network error. Please check your connection and try again.'); }
-  }, [productSlug, startProg, endProg]);
+  }, [productSlug, productName, startProg, endProg, finishPurchase]);
 
-  const triggerDownload = async (token: string) => {
-    if (!token) return;
-    try {
-      const res  = await fetch(`/api/download-token?token=${encodeURIComponent(token)}&product=${productSlug}`);
-      const data = await res.json();
-      if (!res.ok || !data.valid) { setError(`Download error: ${data.error}`); return; }
-      setDlDone(true);
-      const files: { name: string; url: string }[] = data.files?.length ? data.files : data.fileUrl ? [{ name: productName, url: data.fileUrl }] : [];
-      files.forEach((f, i) => setTimeout(() => {
-        const a = document.createElement('a');
-        a.href = f.url; a.download = `${f.name.replace(/\s+/g, '-')}.zip`; a.target = '_blank'; a.rel = 'noopener';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      }, i * 900));
-
-      // ── Purchase events: Meta + TikTok + Google Ads ──────────────────────
-      // Fired ONLY after the receipt was verified AND the download triggered.
-      // value = CATALOG price (e.g. 397 even if the bank added a ₱10 fee), so
-      // all three engines report the same revenue per product.
-      const conv = convRef.current;
-      const safePrice = conv && Number.isFinite(conv.value) && conv.value > 0 ? conv.value : (Number.isFinite(price) && price > 0 ? price : 0);
-      const tx = data.referenceNumber || undefined;
-      pixel.trackPurchase({ name: productName, price: safePrice, currency: 'PHP', transactionId: tx, contentId: productSlug });
-      tiktok.trackPurchase({ name: productName, price: safePrice, currency: 'PHP', transactionId: tx, contentId: productSlug });
-      google.trackPurchase({ slug: productSlug, name: productName, price: safePrice, currency: 'PHP', transactionId: tx, newCustomer: conv?.newCustomer });
-      // ─────────────────────────────────────────────────────────────────────
-
-      if (data.downloadPageUrl) setTimeout(() => { window.location.href = data.downloadPageUrl; }, 3000);
-    } catch { setError('Download error. Use the button below to access your files.'); }
+  const reset = () => {
+    if (redirectRef.current) clearInterval(redirectRef.current);
+    setStage('idle'); setPreview(null); setFname(''); setError(''); setErrDetail(null); setVerified(null); setProg(0); setRedirectIn(null);
+    if (fileRef.current) fileRef.current.value = '';
   };
-
-  const reset = () => { setStage('idle'); setPreview(null); setFname(''); setError(''); setErrDetail(null); setVerified(null); setDlDone(false); setProg(0); if (fileRef.current) fileRef.current.value = ''; };
   const buyAgain = async () => { setResetting(true); try { await fetch(`/api/purchase-status?product=${productSlug}`, { method: 'DELETE' }); } finally { setResetting(false); reset(); } };
-  const copyNum = async () => { await navigator.clipboard.writeText(GCASH_NUM.replace(/\s/g,'')); setCopiedNum(true); setTimeout(() => setCopiedNum(false), 2000); };
+  const copyNum = async () => {
+    try { await navigator.clipboard.writeText(GCASH_NUM.replace(/\s/g, '')); setCopiedNum(true); setTimeout(() => setCopiedNum(false), 2000); }
+    catch { /* clipboard blocked: the number is shown on screen to copy by hand */ }
+  };
   const downloadQR = () => {
     const a = document.createElement('a');
     a.href = '/gcash/qr.png'; a.download = 'GCash-QR-Jherico-Ministry.png';
@@ -146,154 +174,122 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
   };
 
   if (stage === 'checking') return (
-    <div className="glass-card p-12 flex flex-col items-center">
-      <Loader2 size={28} className="text-[var(--green)] animate-spin mb-3" />
-      <p className="text-gray-400 text-sm">Checking purchase status…</p>
+    <div className="card p-10 flex flex-col items-center" role="status">
+      <Loader2 size={26} className="text-accent animate-spin mb-3" />
+      <p className="text-muted">Checking purchase status…</p>
     </div>
   );
 
+  const justVerified = !!verified && verified.token !== '';
+
   return (
     <div className="space-y-5">
-      {/* ── STEP 1: GCash Payment Panel ── */}
+      {/* ── STEP 1: payment details ── */}
       {stage !== 'success' && (
-        <div className="glass-card p-6" style={{ borderColor: 'rgba(0,255,135,0.25)' }}>
-          <div className="flex items-center gap-2 mb-5">
-            <div className="w-7 h-7 rounded-full bg-[var(--green)] flex items-center justify-center text-black text-xs font-extrabold">1</div>
-            <h3 className="font-bold text-white">Send Payment — GCash or any bank / e-wallet</h3>
+        <div className="card p-5 md:p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <span className="w-8 h-8 rounded-full bg-accent-solid text-on-accent flex items-center justify-center text-sm font-bold" aria-hidden="true">1</span>
+            <h3 className="text-lg font-bold text-fg">Send your payment</h3>
           </div>
 
-          <div className="grid sm:grid-cols-2 gap-5">
+          <div className="grid sm:grid-cols-2 gap-6">
             {/* QR code + download button */}
             <div className="flex flex-col items-center">
-              <div className="rounded-2xl border-2 border-[var(--border)] bg-white p-3 mb-3" style={{ width: 184, height: 184 }}>
-                {/* Replace the inner div below with:
-                    <img src="/gcash/qr.png" className="w-full h-full object-contain" alt="GCash QR" />
-                    once you've saved your GCash QR at /public/gcash/qr.png */}
-                <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
-                  {/*<QrCode size={44} className="text-[#0070CD] mb-2" />*/}
-                  <img src="/gcash/qr.png" className="w-full h-full object-contain" alt="GCash QR" />
-                  {/*
-                  <p className="text-[10px] text-gray-500 text-center px-2 leading-tight">
-                    Add GCash QR at<br /><code className="text-[9px]">/public/gcash/qr.png</code>
-                  </p>
-                  */}
-                </div>
+              <div className="rounded-xl border border-line-strong bg-white p-3 mb-3" style={{ width: 188, height: 188 }}>
+                <img src="/gcash/qr.png" className="w-full h-full object-contain" alt="Our GCash QR code" />
               </div>
-
-              {/* ── DOWNLOAD QR BUTTON ── */}
-              <button
-                onClick={downloadQR}
-                className="flex items-center gap-1.5 text-xs font-semibold text-[var(--green)] border border-[var(--green-deeper)] bg-[var(--green-deeper)] bg-opacity-20 hover:bg-opacity-30 px-3 py-1.5 rounded-lg transition-colors mb-2"
-              >
-                <Download size={13} /> Download QR Code
+              <button onClick={downloadQR} className="btn-secondary text-sm px-4 mb-2">
+                <Download size={15} /> Download QR Code
               </button>
-              <p className="text-[10px] text-gray-500 text-center">Save to phone → open GCash → scan from gallery</p>
+              <p className="text-sm text-muted text-center">On a phone: download it, open GCash, tap QR, then &quot;Upload QR&quot;.</p>
             </div>
 
-            {/* Number + instructions */}
-            <div className="flex flex-col justify-center space-y-3">
+            {/* Number + amount */}
+            <div className="flex flex-col justify-center space-y-4">
               <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">GCash Account Name</p>
-                <p className="text-white font-bold text-base">{GCASH_NAME}</p>
+                <p className="text-sm text-muted mb-0.5">GCash account name</p>
+                <p className="text-fg font-bold text-lg">{GCASH_NAME}</p>
               </div>
 
               <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">GCash Number</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-[var(--green)] font-mono font-bold text-xl tracking-wide">{GCASH_NUM}</span>
-                  <button
-                    onClick={copyNum}
-                    className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-[var(--border)] text-gray-300 hover:text-white hover:border-[var(--green)] transition-colors"
-                    title="Copy number"
-                  >
-                    {copiedNum ? <><Check size={12} className="text-[var(--green)]" /> Copied!</> : <><Copy size={12} /> Copy</>}
+                <p className="text-sm text-muted mb-1">GCash number</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-fg font-mono font-bold text-xl tracking-wide">{GCASH_NUM}</span>
+                  <button onClick={copyNum} className="btn-secondary text-sm px-3 min-h-[40px]" aria-label="Copy GCash number">
+                    {copiedNum ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy</>}
                   </button>
                 </div>
               </div>
 
-              <div className="bg-[var(--bg)] rounded-xl p-3 border border-[var(--border)]">
-                <p className="text-xs text-gray-400 mb-0.5">Send exactly:</p>
-                <p className="text-2xl font-extrabold text-[var(--green)]">{CUR} {price.toLocaleString()}</p>
+              <div className="rounded-xl bg-surface border border-line-strong p-4">
+                <p className="text-sm text-muted">Amount to send</p>
+                <p className="text-3xl font-extrabold text-fg" data-testid="amount-to-send">{CUR} {price.toLocaleString()}</p>
               </div>
 
-              <div className="flex items-start gap-2 text-xs text-yellow-300 bg-yellow-950 bg-opacity-40 border border-yellow-800 rounded-lg p-2.5">
-                <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
-                <span>Send <strong>{CUR} {price.toLocaleString()}</strong> to this account. Transfer fees added by your bank or e-wallet are accepted automatically.</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Mobile tip row */}
-          <div className="mt-4 pt-4 border-t border-[var(--border)] grid grid-cols-2 gap-2">
-            <div className="flex items-center gap-2 text-xs text-gray-400 bg-[var(--bg)] rounded-lg px-3 py-2">
-              <QrCode size={13} className="text-[var(--green)]" />
-              <span><strong className="text-white">Option A:</strong> Scan our QR above in GCash</span>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-gray-400 bg-[var(--bg)] rounded-lg px-3 py-2">
-              <Copy size={13} className="text-[var(--green)]" />
-              <span><strong className="text-white">Option B:</strong> Copy number → GCash → Send Money</span>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-gray-400 bg-[var(--bg)] rounded-lg px-3 py-2 col-span-2">
-              <Download size={13} className="text-[var(--green)]" />
-              <span><strong className="text-white">On mobile:</strong> Download our QR → open GCash → scan from gallery</span>
+              <p className="alert alert-warn flex items-start gap-2">
+                <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+                <span>Send exactly <strong>{CUR} {price.toLocaleString()}</strong>. A transfer fee added by your bank or e-wallet is accepted automatically.</span>
+              </p>
             </div>
           </div>
 
           <PaymentChannelsPanel />
 
-          <div className="mt-3 flex items-center gap-2 text-xs text-gray-400">
-            <Smartphone size={13} className="text-[var(--green)]" />
-            <span>After paying, save the <strong className="text-white">full receipt</strong> from your app (GCash: <em>Download</em>; banks / Maya: <em>Save Image</em> or screenshot of the complete receipt).</span>
-          </div>
+          <p className="mt-4 text-sm text-muted">
+            After paying, save the <strong className="text-fg2">full receipt</strong> from your app. In GCash tap <em>Download</em>. In banks and Maya use <em>Save Image</em>, or take a screenshot of the complete receipt.
+          </p>
         </div>
       )}
 
-      {/* ── STEP 2: Upload Receipt ── */}
-      <div className="glass-card p-6" style={{ borderColor: stage === 'success' ? 'rgba(0,255,135,0.5)' : undefined }}>
+      {/* ── STEP 2: upload receipt ── */}
+      <div className="card p-5 md:p-6" style={{ borderColor: stage === 'success' ? 'var(--ok-border)' : undefined }}>
         {stage !== 'success' && (
-          <div className="flex items-center gap-2 mb-4">
-            <div className="w-7 h-7 rounded-full bg-[var(--border)] text-gray-300 flex items-center justify-center text-xs font-extrabold">2</div>
-            <h3 className="font-bold text-white">Upload Your Payment Receipt</h3>
+          <div className="flex items-center gap-3 mb-4">
+            <span className="w-8 h-8 rounded-full bg-accent-solid text-on-accent flex items-center justify-center text-sm font-bold" aria-hidden="true">2</span>
+            <h3 className="text-lg font-bold text-fg">Upload Your Payment Receipt</h3>
           </div>
         )}
 
         {/* Idle */}
         {stage === 'idle' && (
           <div
-            className={`upload-zone p-10 text-center ${drag ? 'drag-over' : ''}`}
+            className={`upload-zone p-8 md:p-10 text-center ${drag ? 'drag-over' : ''}`}
+            role="button" tabIndex={0}
+            aria-label="Upload your payment receipt picture"
             onClick={() => fileRef.current?.click()}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current?.click(); } }}
             onDragOver={e => { e.preventDefault(); setDrag(true); }}
             onDragLeave={() => setDrag(false)}
             onDrop={e => { e.preventDefault(); setDrag(false); const f = e.dataTransfer.files[0]; if (f) processFile(f); }}
           >
-            <Upload size={36} className="text-[var(--green)] mx-auto mb-3" />
-            <p className="text-white font-semibold mb-1">Tap to upload your payment receipt</p>
-            <p className="text-gray-500 text-xs">or drag & drop · JPG, PNG, WEBP · Max 10MB</p>
+            <Upload size={34} className="text-accent mx-auto mb-3" />
+            <p className="text-fg font-semibold text-lg mb-1">Tap here to upload your receipt</p>
+            <p className="text-muted text-sm">Choose the receipt picture from your phone gallery. JPG, PNG or WEBP, up to 10MB.</p>
           </div>
         )}
 
         {/* Verifying */}
         {stage === 'verifying' && (
-          <div className="space-y-4">
+          <div className="space-y-4" role="status" aria-live="polite">
             {preview && (
               <div className="flex gap-4 items-start">
-                <div className="rounded-xl overflow-hidden border border-[var(--border)] bg-white flex-shrink-0" style={{ width: 72, height: 96 }}>
-                  <img src={preview} alt="Receipt" className="w-full h-full object-cover" />
+                <div className="rounded-xl overflow-hidden border border-line bg-white flex-shrink-0" style={{ width: 72, height: 96 }}>
+                  <img src={preview} alt="Your receipt" className="w-full h-full object-cover" />
                 </div>
-                <div className="flex-1">
-                  <p className="text-white text-sm font-medium truncate mb-2">{fname}</p>
-                  <div className="w-full h-2 bg-[var(--border)] rounded-full overflow-hidden">
-                    <div className="h-full bg-[var(--green)] rounded-full transition-all duration-300" style={{ width: `${prog}%` }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-fg text-sm font-medium truncate mb-2">{fname}</p>
+                  <div className="w-full h-2 bg-line rounded-full overflow-hidden">
+                    <div className="h-full bg-accent-solid rounded-full transition-all duration-300" style={{ width: `${prog}%` }} />
                   </div>
-                  <p className="text-[var(--green)] text-xs mt-1">{Math.round(prog)}% — scanning & verifying…</p>
+                  <p className="text-muted text-sm mt-1">{Math.round(prog)}% · checking your receipt</p>
                 </div>
               </div>
             )}
-            <div className="flex items-center gap-3 p-3 bg-[var(--bg)] rounded-xl border border-[var(--border)]">
-              <Loader2 size={18} className="text-[var(--green)] animate-spin" />
+            <div className="flex items-center gap-3 p-4 bg-surface rounded-xl border border-line">
+              <Loader2 size={20} className="text-accent animate-spin flex-shrink-0" />
               <div>
-                <p className="text-white text-sm font-medium">Verifying your receipt…</p>
-                <p className="text-gray-500 text-xs">Reading receipt · Checking amount & recipient · Anti-editing & anti-replay checks</p>
+                <p className="text-fg font-medium">Checking your receipt…</p>
+                <p className="text-muted text-sm">This takes a few seconds. Please do not close this page.</p>
               </div>
             </div>
           </div>
@@ -304,23 +300,23 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
           <div className="space-y-4">
             <div className="flex items-start gap-3">
               {preview && (
-                <div className="rounded-xl overflow-hidden border border-[var(--border)] bg-white flex-shrink-0" style={{ width: 60, height: 80, opacity: 0.5 }}>
-                  <img src={preview} alt="Receipt" className="w-full h-full object-cover" />
+                <div className="rounded-xl overflow-hidden border border-line bg-white flex-shrink-0" style={{ width: 60, height: 80, opacity: 0.6 }}>
+                  <img src={preview} alt="Your receipt" className="w-full h-full object-cover" />
                 </div>
               )}
-              <div className="flex-1">
-                <div className="flex items-start gap-2 p-3 bg-red-950 bg-opacity-50 border border-red-800 rounded-xl">
-                  <XCircle size={18} className="text-red-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <div className="alert alert-error flex items-start gap-2.5" role="alert">
+                  <XCircle size={20} className="flex-shrink-0 mt-0.5" />
                   <div data-testid="receipt-error">
-                    <p className="text-red-300 font-semibold text-sm mb-1">{errDetail?.title || 'Verification Failed'}</p>
-                    <p className="text-red-200 text-xs leading-relaxed">{errDetail?.message || error}</p>
+                    <p className="font-semibold mb-1">{errDetail?.title || 'Verification Failed'}</p>
+                    <p className="leading-relaxed">{errDetail?.message || error}</p>
                     {errDetail?.fixes?.length ? (
-                      <ul className="mt-2 space-y-1 text-xs text-red-100 list-disc pl-4">
+                      <ul className="mt-2 space-y-1 list-disc pl-5">
                         {errDetail.fixes.map((f, i) => <li key={i}>{f}</li>)}
                       </ul>
                     ) : null}
                     {errDetail?.detected && (errDetail.detected.amount || errDetail.detected.reference) ? (
-                      <p className="mt-2 text-[10px] text-red-300/70">
+                      <p className="mt-2 text-sm opacity-80">
                         We read: {[errDetail.detected.channel && errDetail.detected.channel !== 'unknown' ? String(errDetail.detected.channel).toUpperCase() : null,
                           errDetail.detected.amount ? `₱${errDetail.detected.amount.toFixed(2)}` : null,
                           errDetail.detected.fee ? `fee ₱${errDetail.detected.fee.toFixed(2)}` : null,
@@ -331,42 +327,42 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
                 </div>
               </div>
             </div>
-            <div className="p-3 bg-yellow-950 bg-opacity-40 border border-yellow-800 rounded-xl text-xs text-yellow-300">
-              <strong>Already paid?</strong> Email{' '}
+            <p className="alert alert-warn">
+              <strong>Already paid?</strong> Do not pay again. Email{' '}
               <a href={`mailto:${EMAIL}?subject=Paid but receipt failed - ${productName}`} className="underline font-semibold">{EMAIL}</a>{' '}
-              with your reference number and receipt image.
-            </div>
-            <button onClick={reset} className="w-full py-3 rounded-xl border border-[var(--border)] text-gray-300 hover:text-white hover:border-[var(--green)] transition-colors text-sm flex items-center justify-center gap-2">
-              <RefreshCw size={15} /> Try Again
+              with your reference number and receipt picture.
+            </p>
+            <button onClick={reset} className="btn-secondary w-full text-base">
+              <RefreshCw size={16} /> Try Again
             </button>
           </div>
         )}
 
         {/* Success */}
         {stage === 'success' && verified && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-3 p-4 bg-green-950 bg-opacity-50 border border-[var(--green-deeper)] rounded-xl">
-              <CheckCircle2 size={28} className="text-[var(--green)] flex-shrink-0" />
+          <div className="space-y-4" role="status" aria-live="polite">
+            <div className="alert alert-ok flex items-center gap-3 p-4">
+              <CheckCircle2 size={28} className="flex-shrink-0" />
               <div>
-                <p className="text-[var(--green)] font-bold">
-                  {verified.token === '' ? 'Already Purchased ✅' : 'Receipt Verified! ✅'}
-                </p>
-                <p className="text-gray-300 text-xs">
-                  {verified.token === '' ? `You already purchased ${productName}. Use the button below to download.` : `Payment confirmed${verified.channelLabel ? ' via ' + verified.channelLabel : ''}.`}
+                <p className="font-bold text-lg">{justVerified ? 'Payment confirmed' : 'You already purchased this'}</p>
+                <p>
+                  {justVerified
+                    ? `Your receipt was approved${verified.channelLabel ? ' (' + verified.channelLabel + ')' : ''}.`
+                    : `You already bought ${productName} on this device. Use the button below to open your download page.`}
                 </p>
               </div>
             </div>
 
             {verified.testMode && (
-              <div className="flex items-center gap-2 p-2 bg-blue-950 bg-opacity-50 border border-blue-700 rounded-lg text-xs text-blue-300">
-                <Info size={12} /> TEST MODE — set TEST_MODE=false in production.
-              </div>
+              <p className="alert alert-info flex items-center gap-2">
+                <Info size={14} /> TEST MODE is on. Set TEST_MODE=false in production.
+              </p>
             )}
 
             {verified.warnings?.filter(Boolean).map((w, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs text-yellow-400 bg-yellow-950 bg-opacity-30 rounded-lg px-3 py-1.5">
-                <AlertTriangle size={11} /> {w}
-              </div>
+              <p key={i} className="alert alert-warn flex items-center gap-2">
+                <AlertTriangle size={14} className="flex-shrink-0" /> {w}
+              </p>
             ))}
 
             <div className="grid grid-cols-3 gap-2">
@@ -375,39 +371,44 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
                 { l: verified.channelLabel || 'Amount', v: verified.amount > 0 ? `₱${verified.amount.toFixed(2)}` : 'N/A' },
                 { l: 'Date', v: verified.dateStr },
               ].map(f => (
-                <div key={f.l} className="bg-[var(--bg)] rounded-xl p-3 border border-[var(--border)] text-center">
-                  <p className="text-gray-500 text-[10px] uppercase mb-1">{f.l}</p>
-                  <p className="text-white font-semibold text-xs truncate">{f.v}</p>
+                <div key={f.l} className="bg-surface rounded-xl p-3 border border-line text-center">
+                  <p className="text-muted text-xs mb-1">{f.l}</p>
+                  <p className="text-fg font-semibold text-sm truncate">{f.v}</p>
                 </div>
               ))}
             </div>
 
-            <a href={downloadPage} target="_blank" rel="noopener noreferrer"
-              className="btn-shimmer w-full py-4 rounded-xl font-bold text-black flex items-center justify-center gap-2">
-              <ExternalLink size={16} /> Go to Download Page
-            </a>
-
-            {dlDone && (
-              <div className="flex items-center gap-2 p-3 bg-[var(--card)] border border-[var(--border)] rounded-xl text-xs text-gray-300">
-                <Download size={14} className="text-[var(--green)]" />
-                File download was triggered — check your browser's download bar.
-              </div>
+            {destination ? (
+              <>
+                {justVerified && redirectIn !== null && (
+                  <p className="text-fg2 text-center text-base" data-testid="redirect-notice">
+                    Taking you to your download page in <strong className="text-fg">{redirectIn}</strong> second{redirectIn === 1 ? '' : 's'}…
+                  </p>
+                )}
+                {/* Same tab on purpose: one destination, nothing opens in a hidden tab. */}
+                <a href={destination} className="btn-primary w-full text-lg py-4 min-h-[56px]" data-testid="go-download">
+                  Go to My Download Page <ArrowRight size={18} />
+                </a>
+                <p className="text-sm text-muted text-center">
+                  Your files are on the download page. Bookmark it, so you can come back to it later.
+                </p>
+              </>
+            ) : (
+              <p className="alert alert-warn">
+                Your payment is confirmed, but the download page is not set up yet. Please email{' '}
+                <a href={`mailto:${EMAIL}?subject=Paid - download page needed - ${productName}`} className="underline font-semibold">{EMAIL}</a>{' '}
+                with reference <strong>{verified.referenceNumber}</strong> and we will send your files.
+              </p>
             )}
 
-            {/* "Didn't see download" notice */}
-            <div className="flex items-start gap-2 p-3 bg-yellow-950 bg-opacity-40 border border-yellow-800 rounded-lg text-xs text-yellow-300">
-              <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
-              <span>
-                <strong>Didn't see a download start?</strong> A popup blocker may have stopped it.
-                Click the green button above or go directly to:{' '}
-                <a href={downloadPage} target="_blank" rel="noopener noreferrer" className="underline font-semibold text-yellow-200 break-all">{downloadPage}</a>.
-                Still stuck? Email <a href={`mailto:${EMAIL}`} className="underline font-semibold">{EMAIL}</a> with your Ref No.
-              </span>
-            </div>
+            <p className="text-sm text-muted">
+              Did not get to the download page? Tap the button above. Still stuck? Email{' '}
+              <a href={`mailto:${EMAIL}`} className="underline font-semibold text-fg2">{EMAIL}</a> with your Ref No.
+            </p>
 
             <button onClick={buyAgain} disabled={resetting}
-              className="w-full py-2 rounded-xl border border-[var(--border)] text-gray-500 hover:text-gray-300 transition-colors text-xs flex items-center justify-center gap-2">
-              <RotateCcw size={12} /> {resetting ? 'Resetting…' : 'Want to buy again? Click here to start a new purchase'}
+              className="w-full py-2.5 rounded-xl border border-line text-muted hover:text-fg hover:border-line-strong transition-colors text-sm flex items-center justify-center gap-2">
+              <RotateCcw size={13} /> {resetting ? 'Resetting…' : 'Want to buy again? Start a new purchase'}
             </button>
           </div>
         )}
@@ -417,14 +418,14 @@ export default function ReceiptUploader({ productSlug, productName, price, downl
       </div>
 
       {stage === 'idle' && (
-        <div className="flex items-start gap-2 text-xs text-gray-500 px-1">
-          <Info size={12} className="flex-shrink-0 mt-0.5 text-[var(--green-deeper)]" />
+        <p className="flex items-start gap-2 text-sm text-muted px-1">
+          <Info size={15} className="flex-shrink-0 mt-0.5" />
           <span>
-            Upload the <strong className="text-gray-400">complete</strong> receipt — it must show the{' '}
-            <strong className="text-gray-400">amount</strong>, <strong className="text-gray-400">account number / name</strong>,{' '}
-            <strong className="text-gray-400">fee</strong> and <strong className="text-gray-400">reference number</strong>. Do not crop, edit or re-share an old receipt.
+            Upload the <strong className="text-fg2">complete</strong> receipt. It must show the <strong className="text-fg2">amount</strong>,{' '}
+            <strong className="text-fg2">account number or name</strong>, <strong className="text-fg2">fee</strong> and{' '}
+            <strong className="text-fg2">reference number</strong>. Please do not crop or edit it, and do not use an old receipt.
           </span>
-        </div>
+        </p>
       )}
     </div>
   );
