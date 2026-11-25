@@ -1,8 +1,10 @@
 // src/app/api/create-payment/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { legacyPayMongoEnabled, legacyDisabledResponse } from '@/lib/legacyGate';
 import { createPaymentLink } from '@/lib/paymongo';
 
 export async function POST(req: NextRequest) {
+  if (!legacyPayMongoEnabled()) return legacyDisabledResponse();
   try {
     const origin = req.headers.get('origin') || '';
     const allowedOrigin = process.env.ALLOWED_ORIGIN || '';
