@@ -14,7 +14,7 @@ const ok = (name: string, cond: boolean, extra = '') => { cond ? pass++ : failN+
 
 // unit: threshold windows (the user's own examples)
 console.log('\n[price thresholds]');
-const expectRound: Record<number, number> = { 397: 400, 297: 300, 997: 1000, 697: 700, 597: 600, 1997: 2000, 2997: 3000 };
+const expectRound: Record<number, number> = { 397: 400, 297: 300, 997: 1000, 697: 700, 497: 500, 597: 600, 1597: 1600, 1997: 2000, 2997: 3000 };
 for (const [p, r] of Object.entries(expectRound)) ok(`nearestRound(${p}) = ${r}`, nearestRound(+p) === r);
 const prices = PRODUCTS.map(p => ({ slug: p.slug, price: p.price }));
 ok('no catalog window overlaps', findPriceCollisions(prices, 5).length === 0, findPriceCollisions(prices, 5).join('; '));
