@@ -1,11 +1,13 @@
 // src/app/api/check-payment/[linkId]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { legacyPayMongoEnabled, legacyDisabledResponse } from '@/lib/legacyGate';
 import { getPaymentLink } from '@/lib/paymongo';
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: { linkId: string } }
 ) {
+  if (!legacyPayMongoEnabled()) return legacyDisabledResponse();
   try {
     const { linkId } = params;
     if (!linkId || typeof linkId !== 'string') {
