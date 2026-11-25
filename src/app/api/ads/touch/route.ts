@@ -3,11 +3,14 @@
 // the once-per-session client logic; never blocks the page.
 import { NextRequest, NextResponse } from 'next/server';
 import { recordAdTouch, type AdSource } from '@/lib/supabase';
+import { rateLimit, clientIp } from '@/lib/rateLimit';
 
 const OK: AdSource[] = ['google', 'meta', 'tiktok', 'affiliate', 'organic', 'other'];
 const clip = (v: unknown, n = 200) => (typeof v === 'string' && v ? v.slice(0, n) : null);
 
 export async function POST(req: NextRequest) {
+  // v6: cap writes per client so this public endpoint cannot be used to flood the table.
+  if (!rateLimit(`touch:${clientIp(req)}`, 30, 600).ok) return NextResponse.json({ ok: true });
   try {
     const b = await req.json();
     const adSource = OK.includes(b.source) ? (b.source as AdSource) : 'other';
