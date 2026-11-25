@@ -2,9 +2,11 @@
 // Creates a PayMongo QRPh source and returns the QR code + source ID for polling.
 
 import { NextRequest, NextResponse } from 'next/server';
+import { legacyPayMongoEnabled, legacyDisabledResponse } from '@/lib/legacyGate';
 import { createQRPhSource } from '@/lib/paymongo';
 
 export async function POST(req: NextRequest) {
+  if (!legacyPayMongoEnabled()) return legacyDisabledResponse();
   try {
     const origin = req.headers.get('origin') || '';
     const allowedOrigin = process.env.ALLOWED_ORIGIN || '';
