@@ -24,7 +24,7 @@ interface Affiliate {
 }
 
 const TIER_COLOR: Record<string, string> = {
-  primary:'#00FF87', secondary:'#00C46A', tertiary:'#FFA500', quaternary:'#FF6B6B', quinary:'#9B7EDE',
+  primary:'#60A5FA', secondary:'#3B82F6', tertiary:'#FFA500', quaternary:'#FF6B6B', quinary:'#9B7EDE',
 };
 
 type View = 'dashboard' | 'ads' | 'affiliates' | 'purchases';
@@ -76,7 +76,7 @@ export default function DashboardPage() {
   const logout = async () => { await fetch('/api/auth/logout', { method: 'POST' }); window.location.href = '/login'; };
 
   const STAT_CARDS = stats ? [
-    { label:'Total Sales', value: stats.total_sales, icon:<ShoppingCart size={20}/>, color:'#00FF87', bg:'rgba(0,255,135,0.1)' },
+    { label:'Total Sales', value: stats.total_sales, icon:<ShoppingCart size={20}/>, color:'#60A5FA', bg:'rgba(96,165,250,0.12)' },
     { label:'Total Revenue', value: `₱${(stats.total_revenue||0).toLocaleString()}`, icon:<DollarSign size={20}/>, color:'#60a5fa', bg:'rgba(96,165,250,0.1)' },
     { label:'Total Affiliates', value: stats.total_affiliates, icon:<Users size={20}/>, color:'#a78bfa', bg:'rgba(167,139,250,0.1)' },
     { label:'Total Clicks', value: stats.total_clicks, icon:<MousePointerClick size={20}/>, color:'#fb923c', bg:'rgba(251,146,60,0.1)' },
@@ -97,7 +97,7 @@ export default function DashboardPage() {
       <aside className="w-64 flex-shrink-0 flex flex-col border-r border-slate-700" style={{ background: '#1e293b' }}>
         <div className="p-5 border-b border-slate-700">
           <div className="flex items-center gap-2">
-            <BookOpen size={20} className="text-emerald-400" />
+            <BookOpen size={20} className="text-blue-300" />
             <span className="font-bold text-white text-sm">Ministry Dashboard</span>
           </div>
         </div>
@@ -112,7 +112,7 @@ export default function DashboardPage() {
           ] as { id: View; icon: React.ReactNode; label: string }[]).map(item => (
             <button key={item.id} onClick={() => setView(item.id)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                view === item.id ? 'bg-emerald-500 bg-opacity-20 text-emerald-400' : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                view === item.id ? 'bg-blue-500 bg-opacity-20 text-blue-300' : 'text-slate-400 hover:text-white hover:bg-slate-700'
               }`}>
               {item.icon} {item.label}
             </button>
@@ -132,7 +132,7 @@ export default function DashboardPage() {
         {/* Admin identity */}
         <div className="p-4 border-t border-slate-700 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-black text-xs font-bold">JB</div>
+            <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold">JB</div>
             <div>
               <p className="text-white text-xs font-semibold">Admin</p>
               <p className="text-slate-500 text-[10px]">jhericojohnbalasa@gmail.com</p>
@@ -193,7 +193,7 @@ export default function DashboardPage() {
                       <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} tickLine={false} />
                       <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickLine={false} axisLine={false} />
                       <Tooltip contentStyle={{ background:'#0f172a', border:'1px solid #334155', borderRadius:8, color:'#e2e8f0', fontSize:12 }} />
-                      <Bar dataKey="sales" fill="#00C46A" radius={[4,4,0,0]} name="Sales" />
+                      <Bar dataKey="sales" fill="#3B82F6" radius={[4,4,0,0]} name="Sales" />
                       <Bar dataKey="revenue" fill="#60a5fa" radius={[4,4,0,0]} name="Revenue (₱)" />
                     </BarChart>
                   </ResponsiveContainer>
@@ -220,7 +220,7 @@ export default function DashboardPage() {
                           <tr key={p.id} className="border-b border-slate-800 hover:bg-slate-800 transition-colors">
                             <td className="py-2.5 pr-4 font-mono text-xs text-slate-300">{p.reference_number}</td>
                             <td className="py-2.5 pr-4 text-xs text-slate-300 truncate max-w-[150px]">{p.product_name}</td>
-                            <td className="py-2.5 pr-4 text-xs font-bold text-emerald-400">₱{p.amount.toLocaleString()}</td>
+                            <td className="py-2.5 pr-4 text-xs font-bold text-blue-300">₱{p.amount.toLocaleString()}</td>
                             <td className="py-2.5 pr-4 text-xs text-slate-400">{p.affiliate_code || '—'}</td>
                             <td className="py-2.5 text-xs text-slate-500">{new Date(p.purchased_at).toLocaleDateString()}</td>
                           </tr>
@@ -271,7 +271,7 @@ export default function DashboardPage() {
                           </div>
                           <div className="text-center">
                             <p className="text-slate-400">Earnings</p>
-                            <p className="text-emerald-400 font-bold">₱{(aff.earnings||0).toFixed(2)}</p>
+                            <p className="text-blue-300 font-bold">₱{(aff.earnings||0).toFixed(2)}</p>
                           </div>
                           <div className="text-center">
                             <p className="text-slate-400">Paid</p>
@@ -280,7 +280,7 @@ export default function DashboardPage() {
                           <div className="flex items-center gap-1">
                             <button onClick={e => { e.stopPropagation(); copyLink(aff.referral_link); }}
                               className="p-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white transition-colors">
-                              {copied === aff.referral_link ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                              {copied === aff.referral_link ? <Check size={13} className="text-blue-300" /> : <Copy size={13} />}
                             </button>
                             {expandedAff === aff.root_code ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-400" />}
                           </div>
@@ -305,11 +305,11 @@ export default function DashboardPage() {
                                 </div>
                               </div>
                               <div className="flex items-center gap-4 text-xs">
-                                <span className="text-emerald-400 font-bold">₱{(child.earnings||0).toFixed(2)}</span>
+                                <span className="text-blue-300 font-bold">₱{(child.earnings||0).toFixed(2)}</span>
                                 <span className="text-slate-400">{new Date(child.created_at).toLocaleDateString()}</span>
                                 <button onClick={() => copyLink(child.referral_link)}
                                   className="p-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300">
-                                  {copied === child.referral_link ? <Check size={11} className="text-emerald-400"/> : <Copy size={11}/>}
+                                  {copied === child.referral_link ? <Check size={11} className="text-blue-300"/> : <Copy size={11}/>}
                                 </button>
                               </div>
                             </div>
@@ -348,7 +348,7 @@ export default function DashboardPage() {
                           <td className="py-2.5 pr-4 text-xs text-slate-500">{i+1}</td>
                           <td className="py-2.5 pr-4 font-mono text-xs text-slate-300">{p.reference_number}</td>
                           <td className="py-2.5 pr-4 text-xs text-slate-300">{p.product_name}</td>
-                          <td className="py-2.5 pr-4 text-xs font-bold text-emerald-400">₱{p.amount.toLocaleString()}</td>
+                          <td className="py-2.5 pr-4 text-xs font-bold text-blue-300">₱{p.amount.toLocaleString()}</td>
                           <td className="py-2.5 pr-4 text-xs">
                             {p.affiliate_code
                               ? <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-900 text-purple-300">{p.affiliate_code}</span>
