@@ -11,27 +11,26 @@ export default function SuccessPage() {
   }, [dlUrl]);
   return (
     <main className="min-h-screen bg-radial-glow flex items-center justify-center px-4">
-      <div className="glass-card p-10 max-w-md w-full text-center" style={{ borderColor: 'rgba(0,255,135,0.4)' }}>
+      <div className="glass-card p-10 max-w-md w-full text-center">
         <div className="relative mx-auto w-20 h-20 mb-6">
-          <div className="absolute inset-0 rounded-full bg-[var(--green)] opacity-20 animate-ping" />
-          <div className="relative w-20 h-20 rounded-full bg-[var(--green-deeper)] bg-opacity-30 flex items-center justify-center border-2 border-[var(--green)]">
-            <CheckCircle2 size={40} className="text-[var(--green)]" />
+          <div className="relative w-20 h-20 rounded-full bg-accent-soft flex items-center justify-center border-2 border-accent">
+            <CheckCircle2 size={40} className="text-accent" />
           </div>
         </div>
-        <h1 className="text-4xl font-bold text-white mb-2" style={{ fontFamily: 'Bebas Neue, Impact, sans-serif' }}>Payment Verified! 🎉</h1>
-        <p className="text-[var(--green)] font-semibold mb-4">GCash Receipt Confirmed</p>
-        <p className="text-gray-300 text-sm mb-6">Redirecting to your download page in <span className="text-[var(--green)] font-bold text-lg">{cd}</span> seconds.</p>
-        <div className="w-full h-1.5 bg-[var(--border)] rounded-full overflow-hidden mb-6">
-          <div className="h-full bg-[var(--green)] rounded-full transition-all duration-1000" style={{ width: `${((5-cd)/5)*100}%` }} />
+        <h1 className="text-4xl font-bold text-fg mb-2">Payment verified</h1>
+        <p className="text-accent font-semibold mb-4">Receipt confirmed</p>
+        <p className="text-fg2 text-sm mb-6">Redirecting to your download page in <span className="text-accent font-bold text-lg">{cd}</span> seconds.</p>
+        <div className="w-full h-1.5 bg-line rounded-full overflow-hidden mb-6">
+          <div className="h-full bg-accent-solid rounded-full transition-all duration-1000" style={{ width: `${((5-cd)/5)*100}%` }} />
         </div>
-        <a href={dlUrl} className="btn-shimmer inline-flex items-center gap-2 px-8 py-3 rounded-xl font-bold text-black mb-4">
+        <a href={dlUrl} className="btn-shimmer inline-flex items-center gap-2 px-8 py-3 rounded-xl font-bold text-on-accent mb-4">
           <Download size={18} /> Go to Download Page Now
         </a>
-        <div className="mt-4 pt-4 border-t border-[var(--border)]">
-          <div className="flex items-center justify-center gap-2 text-xs text-gray-500">
-            <BookOpen size={12} className="text-[var(--green)]" /> The Fundamentals — 16 Core Christian Truths
+        <div className="mt-4 pt-4 border-t border-line">
+          <div className="flex items-center justify-center gap-2 text-sm text-muted">
+            <BookOpen size={12} className="text-accent" /> The Fundamentals — 16 Core Christian Truths
           </div>
-          <p className="text-[10px] text-gray-600 mt-2">Issues? Email <a href="mailto:jhericojohnbalasa@gmail.com" className="text-[var(--green)] hover:underline">jhericojohnbalasa@gmail.com</a></p>
+          <p className="text-sm text-muted mt-2">Issues? Email <a href="mailto:jhericojohnbalasa@gmail.com" className="text-accent hover:underline">jhericojohnbalasa@gmail.com</a></p>
         </div>
       </div>
     </main>
