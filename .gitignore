@@ -9,6 +9,7 @@ next-env.d.ts
 git_batch_commit.py
 error/
 ministry-v4-meta-pixel.zip
+bulk_git.py
 .backup/
 task/
 .env.temp
