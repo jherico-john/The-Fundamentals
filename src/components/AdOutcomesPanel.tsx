@@ -11,9 +11,9 @@ interface Prod { slug: string; name: string; sales: number; revenue: number }
 const ENGINE: Record<string, { label: string; color: string; icon: string }> = {
   google: { label: 'Google Ads', color: '#4285F4', icon: 'G' },
   meta: { label: 'Meta (Facebook / Instagram)', color: '#1877F2', icon: 'f' },
-  tiktok: { label: 'TikTok Ads', color: '#fe2c55', icon: '♪' },
-  affiliate: { label: 'Affiliates', color: '#a78bfa', icon: '🤝' },
-  organic: { label: 'Organic / Direct', color: '#34d399', icon: '🌱' },
+  tiktok: { label: 'TikTok Ads', color: '#fe2c55', icon: '' },
+  affiliate: { label: 'Affiliates', color: '#a78bfa', icon: '' },
+  organic: { label: 'Organic / Direct', color: '#34d399', icon: '' },
   other: { label: 'Other campaigns', color: '#94a3b8', icon: '•' },
 };
 const peso = (n: number) => `₱${Math.round(n).toLocaleString()}`;
@@ -39,7 +39,7 @@ export default function AdOutcomesPanel() {
     <div className="space-y-6" data-testid="ad-outcomes">
       <div className="flex items-center gap-2">
         {[7, 30, 90].map(d => (
-          <button key={d} onClick={() => setDays(d)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${days === d ? 'bg-emerald-500 bg-opacity-20 text-emerald-400' : 'bg-slate-700 text-slate-300'}`}>Last {d} days</button>
+          <button key={d} onClick={() => setDays(d)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${days === d ? 'bg-blue-500 bg-opacity-20 text-blue-300' : 'bg-slate-700 text-slate-300'}`}>Last {d} days</button>
         ))}
       </div>
 
@@ -75,7 +75,7 @@ export default function AdOutcomesPanel() {
             <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11 }} tickLine={false} />
             <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickLine={false} axisLine={false} />
             <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, color: '#e2e8f0', fontSize: 12 }} />
-            <Bar dataKey="revenue" fill="#00C46A" radius={[4, 4, 0, 0]} name="Revenue (₱)" />
+            <Bar dataKey="revenue" fill="#3B82F6" radius={[4, 4, 0, 0]} name="Revenue (₱)" />
           </BarChart>
         </ResponsiveContainer>
         <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
