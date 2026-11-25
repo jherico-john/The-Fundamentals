@@ -39,6 +39,9 @@ const CUR        = process.env.NEXT_PUBLIC_CURRENCY      || 'PHP';
 const EMAIL      = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'jhericojohnbalasa@gmail.com';
 // Tracking pixels need a moment to send before the page is left (unchanged from v5).
 const REDIRECT_DELAY_SEC = 3;
+// Where the Thank You page opens. Default: a NEW tab. Set NEXT_PUBLIC_THANKYOU_OPEN_NEW_TAB=false
+// to go back to opening it in this same tab. (Literal env access so Next inlines it.)
+const NEW_TAB = process.env.NEXT_PUBLIC_THANKYOU_OPEN_NEW_TAB !== 'false';
 
 export default function ReceiptUploader({ productSlug, productName, price }: Props) {
   const pixel  = useMetaPixel();
@@ -128,7 +131,14 @@ export default function ReceiptUploader({ productSlug, productName, price }: Pro
       setRedirectIn(Math.max(left, 0));
       if (left <= 0) {
         if (redirectRef.current) clearInterval(redirectRef.current);
-        window.location.assign(url as string);
+        // A new tab opened by a timer (not a tap) can be blocked by the phone's popup blocker.
+        // If that happens we fall back to this tab so the customer is never left without the page.
+        if (NEW_TAB) {
+          const w = window.open(url as string, '_blank');
+          if (w) { try { w.opener = null; } catch { /* ignore */ } } else window.location.assign(url as string);
+        } else {
+          window.location.assign(url as string);
+        }
       }
     }, 1000);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -382,11 +392,11 @@ export default function ReceiptUploader({ productSlug, productName, price }: Pro
               <>
                 {justVerified && redirectIn !== null && (
                   <p className="text-fg2 text-center text-base" data-testid="redirect-notice">
-                    Taking you to your download page in <strong className="text-fg">{redirectIn}</strong> second{redirectIn === 1 ? '' : 's'}…
+                    {NEW_TAB ? 'Opening your download page in a new tab in' : 'Taking you to your download page in'} <strong className="text-fg">{redirectIn}</strong> second{redirectIn === 1 ? '' : 's'}…
                   </p>
                 )}
-                {/* Same tab on purpose: one destination, nothing opens in a hidden tab. */}
-                <a href={destination} className="btn-primary w-full text-lg py-4 min-h-[56px]" data-testid="go-download">
+                {/* One destination only. Opens in a new tab (default) or this tab, see NEW_TAB above. */}
+                <a href={destination} {...(NEW_TAB ? { target: '_blank', rel: 'noopener noreferrer' } : {})} className="btn-primary w-full text-lg py-4 min-h-[56px]" data-testid="go-download">
                   Go to My Download Page <ArrowRight size={18} />
                 </a>
                 <p className="text-sm text-muted text-center">
