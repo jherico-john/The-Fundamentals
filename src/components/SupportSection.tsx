@@ -8,7 +8,7 @@ const FAQ = [
   { q: 'My receipt upload fails or says "Invalid receipt"', a: 'Upload the complete receipt from your payment app. Do not crop or edit it. It must show the amount, account number or name, fee and reference number. The message on screen tells you exactly what is missing and how to fix it.' },
   { q: 'Amount mismatch error', a: 'The amount on your receipt does not match the product price. Send the exact price shown on this page and try again. If you already paid, email us and we will check it by hand.' },
   { q: '"Reference number already used" error', a: 'Each payment receipt can only be used once. If this is your first time using it, email us right away with the reference number.' },
-  { q: 'I was not taken to the download page', a: 'Tap the "Go to My Download Page" button that appears after your receipt is approved. It opens in the same window. If the button is gone, open this page again. Your purchase is remembered on this device and the button comes back.' },
+  { q: 'I was not taken to the download page', a: 'Tap the "Go to My Download Page" button that appears after your receipt is approved. It opens your download page. If the button is gone, open this page again. Your purchase is remembered on this device and the button comes back.' },
   { q: 'I closed the page before I downloaded my files', a: 'Open this page again on the same phone or computer. Your purchase is remembered, so you can tap "Go to My Download Page" without paying again. Using a different device? Email us with your reference number.' },
   { q: 'The page crashed or showed a server error', a: 'Try a different browser or device. If the problem continues, email us with your reference number and we will send your download link directly.' },
 ];
