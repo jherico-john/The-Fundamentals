@@ -2,12 +2,14 @@
 // Polls a QRPh source status. When 'chargeable', captures payment.
 
 import { NextRequest, NextResponse } from 'next/server';
+import { legacyPayMongoEnabled, legacyDisabledResponse } from '@/lib/legacyGate';
 import { getSource, createPaymentFromSource } from '@/lib/paymongo';
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: { sourceId: string } }
 ) {
+  if (!legacyPayMongoEnabled()) return legacyDisabledResponse();
   try {
     const { sourceId } = params;
     if (!sourceId) {
