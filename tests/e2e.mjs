@@ -11,16 +11,38 @@ async function upload(jar, slug, file) { const fd = new FormData(); fd.append('r
 
 (async () => {
   console.log('\n[pages render + footer text]');
-  const pages = { '/checkout': 'The Fundamentals', '/products/lifegroup': 'Lifegroup Essentials', '/products/pre-encounter': 'Pre-Encounter Journey', '/products/encounter': 'Encounter Journey', '/products/post-encounter': 'Post-Encounter', '/products/sol': 'SOL', '/products/bundle': 'Complete Ministry Bundle', '/login': 'Sign In', '/signup': 'Create Account' };
+  const pages = { '/checkout': 'The Fundamentals', '/products/lifegroup': 'Lifegroup Essentials', '/products/pre-encounter': 'Pre-Encounter Journey', '/products/encounter': 'Encounter Journey', '/products/post-encounter': 'Post-Encounter', '/products/sol': 'SOL 1, 2 & 3', '/products/bundle': 'Complete Ministry Bundle', '/login': 'Sign In', '/signup': 'Create Account' };
   for (const [p, name] of Object.entries(pages)) {
-    const r = await fetch(B + p); const h = (await r.text()).replace(/<!-- -->/g, '');
+    const r = await fetch(B + p); const h = (await r.text()).replace(/<!-- -->/g, '').replace(/&amp;/g, '&');
     ok(`${p} → 200 + footer "${name}"`, r.status === 200 && h.includes(`Jherico Balasa Ministry. ${name}. All rights reserved. All Glory to God.`), r.status + '');
   }
   { const r = await fetch(B + '/products/sunyl', { redirect: 'manual' }); ok('/products/sunyl redirects to lifegroup', [301, 307, 308].includes(r.status) && r.headers.get('location')?.endsWith('/products/lifegroup'), r.headers.get('location') || r.status); }
   { const h = await (await fetch(B + '/products/lifegroup')).text(); ok('page includes Google tag AW-18516168856', h.includes('AW-18516168856')); ok('Meta pixel noscript fallback present (scripts inject client-side)', h.includes('facebook.com/tr?id=1024772523807392')); }
-  for (const [p, price] of Object.entries({ '/products/lifegroup': '397', '/products/pre-encounter': '297', '/products/encounter': '997', '/products/post-encounter': '697', '/products/sol': '1,997', '/checkout': '597', '/products/bundle': '2,997' })) { const h = (await (await fetch(B + p)).text()).replace(/<!-- -->/g, ''); ok(`${p} shows catalog price ${price}`, h.includes(`PHP ${price}`)); }
-  { const h = await (await fetch(B + '/products/bundle')).text(); ok('bundle page: limited-time badge + "Everything You Get"', h.includes('bundle-offer') && h.includes('Everything You Get')); }
+  for (const [p, price] of Object.entries({ '/products/lifegroup': '397', '/products/pre-encounter': '297', '/products/encounter': '997', '/products/post-encounter': '497', '/products/sol': '1,597', '/checkout': '597', '/products/bundle': '2,997' })) { const h = (await (await fetch(B + p)).text()).replace(/<!-- -->/g, ''); ok(`${p} shows catalog price ${price}`, h.includes(`PHP ${price}`)); }
+  { const h = (await (await fetch(B + '/products/bundle')).text()).replace(/<!-- -->/g, ''); ok('bundle page: limited-time badge + compact "Includes:" line (no "Everything You Get" list)', h.includes('bundle-offer') && h.includes('Includes: ') && !h.includes('Everything You Get')); }
   { const h = await (await fetch(B + '/products/lifegroup')).text(); ok('payment channels panel + bridge guide present (SSR shell)', h.includes('Accepted payment methods') || h.includes('payment-channels') || h.includes('bridge-guide')); }
+
+  console.log('\n[v6 checkout structure — every checkout page]');
+  const checkoutPages = ['/checkout', '/products/lifegroup', '/products/pre-encounter', '/products/encounter', '/products/post-encounter', '/products/sol', '/products/bundle'];
+  for (const p of checkoutPages) {
+    const r = await fetch(B + p); const h = (await r.text()).replace(/<!-- -->/g, '').replace(/&amp;/g, '&').replace(/&#x27;/g, "'");
+    const iTut = h.indexOf('data-testid="payment-tutorial"'), iPay = h.indexOf('data-testid="payment-section"'), iHelp = h.indexOf('data-testid="support-section"'), iJump = h.indexOf('data-testid="jump-to-payment"');
+    ok(`${p}: "What's Inside" and "What Leaders Are Saying" removed`, !/What.s Inside/i.test(h) && !/What (Ministry )?Leaders Are Saying/i.test(h));
+    ok(`${p}: order = tutorial → price & payment → having a problem`, iTut > 0 && iPay > iTut && iHelp > iPay, `${iTut}/${iPay}/${iHelp}`);
+    ok(`${p}: fixed jump button targets #payment (section id present)`, iJump > 0 && h.includes('id="payment"'));
+    ok(`${p}: no MediaFire link anywhere in the page`, !/mediafire/i.test(h));
+    ok(`${p}: theme toggle in the navbar, after "Join Free"`, h.indexOf('Join Free') > 0 && h.indexOf('data-testid="theme-toggle"') > h.indexOf('Join Free'));
+    ok(`${p}: no green theme colours / Bebas font left`, !/00FF87|Bebas|--green\b/.test(h));
+    ok(`${p}: Meta + Google tags still in the page`, h.includes('AW-18516168856') && h.includes('facebook.com/tr?id=1024772523807392'));
+  }
+  { const r = await fetch(B + '/checkout'); const h = await r.text();
+    ok('theme is applied before first paint (inline init script)', h.includes("tf-theme") && h.includes('data-theme'));
+    for (const [k, re] of Object.entries({ 'X-Content-Type-Options': /nosniff/, 'Strict-Transport-Security': /max-age/, 'Content-Security-Policy': /object-src 'none'/, 'Referrer-Policy': /strict-origin/, 'X-Frame-Options': /SAMEORIGIN/ })) ok(`security header ${k}`, re.test(r.headers.get(k) || ''), r.headers.get(k) || 'missing');
+    ok('X-Powered-By hidden', !r.headers.get('x-powered-by')); }
+  if (process.env.NEXT_PUBLIC_TUTORIAL_VIDEO_URL) { const h = await (await fetch(B + '/checkout')).text(); const iV = h.indexOf('data-testid="tutorial-video"'), iJ = h.indexOf('data-testid="jump-to-payment"'), iT = h.indexOf('data-testid="payment-tutorial"'); ok('YouTube video embedded (nocookie) and placed before the jump button and tutorial', h.includes('youtube-nocookie.com/embed/') && iV > 0 && iV < iJ && iJ < iT); }
+
+  console.log('\n[legacy PayMongo endpoints are closed]');
+  for (const [m, p] of [['POST', '/api/create-payment'], ['POST', '/api/create-qrph'], ['GET', '/api/check-payment/abc'], ['GET', '/api/check-source/abc'], ['POST', '/api/webhooks/paymongo']]) { const r = await fetch(B + p, { method: m, ...(m === 'POST' ? { body: '{}' } : {}) }); ok(`${m} ${p} → 410 Gone`, r.status === 410, r.status + ''); }
 
   console.log('\n[login / dashboard flow — the v4 bug]');
   const anon = new Jar();
@@ -67,8 +89,14 @@ async function upload(jar, slug, file) { const fd = new FormData(); fd.append('r
     ok('dashboard: channels include maya, maribank, gotyme, bdo', ['maya', 'maribank', 'gotyme', 'bdo'].every(c => d.channels.some(x => x.channel === c)), d.channels.map(c => c.channel).join(',')); }
 
   console.log('\n[download token]');
-  { const { d } = await upload(new Jar(), 'lifegroup', 'bpi_397_qr.png'); const r = await fetch(B + `/api/download-token?token=${encodeURIComponent(d.token || 'x')}&product=lifegroup`); const dd = await r.json(); ok('download-token answers (file URL or 503 "not configured")', [200, 503].includes(r.status), r.status + ' ' + (dd.error || 'ok')); }
+  { const { d } = await upload(new Jar(), 'lifegroup', 'bpi_397_qr.png');
+    ok('verify-receipt returns ONLY the Thank You page (no file URL anywhere)', d.success && /^https:\/\//.test(d.downloadPageUrl || '') && !/mediafire/i.test(JSON.stringify(d)) && !('files' in d) && !('fileUrl' in d), d.downloadPageUrl || d.error);
+    const r = await fetch(B + `/api/download-token?token=${encodeURIComponent(d.token || 'x')}&product=lifegroup`); const dd = await r.json();
+    ok('download-token → Thank You page URL only, never a file URL', r.status === 200 && dd.valid && dd.downloadPageUrl === d.downloadPageUrl && !('fileUrl' in dd) && !('files' in dd) && !/mediafire/i.test(JSON.stringify(dd)), JSON.stringify(dd).slice(0, 120)); }
   { const r = await fetch(B + '/api/download-token?token=bad&product=lifegroup'); ok('bad token → 401', r.status === 401); }
+
+  console.log('\n[bad uploads]');
+  { const fd = new FormData(); fd.append('receipt', new Blob([Buffer.from('not an image at all, just text pretending')], { type: 'image/png' }), 'fake.png'); fd.append('productSlug', 'lifegroup'); const r = await req(new Jar(), '/api/verify-receipt', { method: 'POST', body: fd }); const d = await r.json(); ok('file with image MIME but non-image bytes → 400 BAD_FILE_TYPE', r.status === 400 && d.errorDetail?.code === 'BAD_FILE_TYPE', r.status + ''); }
 
   console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
 })();
