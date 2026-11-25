@@ -1,9 +1,18 @@
 // src/lib/tokens.ts — HMAC-signed tokens for download, purchase cookie, admin session, customer session
 import crypto from 'crypto';
 
-const DL_SEC  = process.env.DOWNLOAD_TOKEN_SECRET  || 'dev-dl-secret-replace-in-prod-32c';
-const ADM_SEC = process.env.ADMIN_SESSION_SECRET   || 'dev-adm-secret-replace-in-prod-32';
-const DL_EXP  = parseInt(process.env.DOWNLOAD_TOKEN_EXPIRY_SEC || '600');
+// v6: secrets are resolved lazily and FAIL CLOSED in production. A missing or
+// placeholder secret can never silently fall back to a public dev default (which
+// would let anyone forge admin / customer / purchase cookies).
+function requireSecret(name: string, devFallback: string): string {
+  const v = (process.env[name] || '').trim();
+  if (v.length >= 16 && !v.startsWith('REPLACE_WITH')) return v;
+  if (process.env.NODE_ENV === 'production') throw new Error(`${name} is missing or too short (min 16 chars). Set it in the environment.`);
+  return devFallback;
+}
+const dlSec  = () => requireSecret('DOWNLOAD_TOKEN_SECRET', 'dev-dl-secret-replace-in-prod-32c');
+const admSec = () => requireSecret('ADMIN_SESSION_SECRET',  'dev-adm-secret-replace-in-prod-32');
+const DL_EXP = parseInt(process.env.DOWNLOAD_TOKEN_EXPIRY_SEC || '600');
 
 function sign(b64: string, secret: string) {
   return crypto.createHmac('sha256', secret).update(b64).digest('base64url');
@@ -19,17 +28,18 @@ function readToken<T>(token: string, secret: string): T | null {
     const [b64, sig] = token.split('.');
     if (!b64 || !sig) return null;
     const expected = sign(b64, secret);
-    if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+    const a = Buffer.from(sig), b = Buffer.from(expected);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
     return JSON.parse(Buffer.from(b64, 'base64url').toString()) as T;
   } catch { return null; }
 }
 
 // ── Download Token (short-lived 10 min) ───────────────────────────────────────
 export function issueDownloadToken(refNo: string, amount: number): string {
-  return makeToken({ refNo, amount, iat: Math.floor(Date.now()/1000) }, DL_SEC);
+  return makeToken({ refNo, amount, iat: Math.floor(Date.now()/1000) }, dlSec());
 }
 export function verifyDownloadToken(t: string): { refNo: string; amount: number } | null {
-  const p = readToken<{ refNo: string; amount: number; iat: number }>(t, DL_SEC);
+  const p = readToken<{ refNo: string; amount: number; iat: number }>(t, dlSec());
   if (!p) return null;
   if (Math.floor(Date.now()/1000) - p.iat > DL_EXP) return null;
   return { refNo: p.refNo, amount: p.amount };
@@ -38,20 +48,20 @@ export function verifyDownloadToken(t: string): { refNo: string; amount: number 
 // ── Purchase Cookie (1 year — "already bought this device") ──────────────────
 export const PURCHASE_COOKIE = 'tf_purchase';
 export function signPurchaseCookie(refNo: string, amount: number): string {
-  return makeToken({ refNo, amount, at: Math.floor(Date.now()/1000) }, DL_SEC);
+  return makeToken({ refNo, amount, at: Math.floor(Date.now()/1000) }, dlSec());
 }
 export function verifyPurchaseCookie(v: string): { refNo: string; amount: number; at: number } | null {
-  return readToken(v, DL_SEC);
+  return readToken(v, dlSec());
 }
-export const purchaseCookieOpts = { path:'/', maxAge: 60*60*24*365, sameSite:'lax' as const, httpOnly:false };
+export const purchaseCookieOpts = { path:'/', maxAge: 60*60*24*365, sameSite:'lax' as const, httpOnly:false, secure: process.env.NODE_ENV==='production' };
 
 // ── Admin Session Cookie (8 hours, httpOnly) ──────────────────────────────────
 export const ADMIN_COOKIE = 'adm_sess';
 export function signAdminSession(): string {
-  return makeToken({ role:'admin', iat: Math.floor(Date.now()/1000) }, ADM_SEC);
+  return makeToken({ role:'admin', iat: Math.floor(Date.now()/1000) }, admSec());
 }
 export function verifyAdminSession(v: string): boolean {
-  const p = readToken<{ role: string; iat: number }>(v, ADM_SEC);
+  const p = readToken<{ role: string; iat: number }>(v, admSec());
   if (!p || p.role !== 'admin') return false;
   return Math.floor(Date.now()/1000) - p.iat <= 60*60*8;
 }
@@ -60,10 +70,10 @@ export const adminCookieOpts = { path:'/', maxAge:60*60*8, sameSite:'lax' as con
 // ── Customer Session Cookie (7 days) ─────────────────────────────────────────
 export const CUST_COOKIE = 'cust_sess';
 export function signCustomerSession(id: string, email: string): string {
-  return makeToken({ id, email, iat: Math.floor(Date.now()/1000) }, DL_SEC);
+  return makeToken({ id, email, iat: Math.floor(Date.now()/1000) }, dlSec());
 }
 export function verifyCustomerSession(v: string): { id: string; email: string } | null {
-  const p = readToken<{ id: string; email: string; iat: number }>(v, DL_SEC);
+  const p = readToken<{ id: string; email: string; iat: number }>(v, dlSec());
   if (!p) return null;
   if (Math.floor(Date.now()/1000) - p.iat > 60*60*24*7) return null;
   return { id: p.id, email: p.email };
@@ -76,10 +86,10 @@ export const custCookieOpts = { path:'/', maxAge:60*60*24*7, sameSite:'lax' as c
 // personal data: just a signed list of purchased product slugs.
 export const BUYER_COOKIE = 'tf_buyer';
 export function signBuyerCookie(slugs: string[]): string {
-  return makeToken({ s: Array.from(new Set(slugs)).sort(), at: Math.floor(Date.now() / 1000) }, DL_SEC);
+  return makeToken({ s: Array.from(new Set(slugs)).sort(), at: Math.floor(Date.now() / 1000) }, dlSec());
 }
 export function readBuyerCookie(v: string): string[] {
-  const p = readToken<{ s: string[] }>(v, DL_SEC);
+  const p = readToken<{ s: string[] }>(v, dlSec());
   return p?.s || [];
 }
 export const buyerCookieOpts = { path: '/', maxAge: 60 * 60 * 24 * 365, sameSite: 'lax' as const, httpOnly: false, secure: process.env.NODE_ENV === 'production' };
