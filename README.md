@@ -1,4 +1,4 @@
-# Ministry Checkout v5
+# Ministry Checkout v6
 
 > **v5** — hybrid payments (GCash + banks/e-wallets via InstaPay), 6 products + bundle, Google Ads + Meta + TikTok, customer account panel. See **CHANGELOG-v5.md** for the full requirement map, new env vars and the Supabase upgrade step (**run `supabase/schema.sql` in the SQL editor before deploying**).
 
